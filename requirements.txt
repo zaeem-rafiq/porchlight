@@ -1,0 +1,13 @@
+strands-agents
+strands-agents-tools
+bedrock-agentcore
+bedrock-agentcore-starter-toolkit
+supabase
+twilio
+boto3
+pydantic
+pyyaml
+pytest
+python-dotenv
+httpx
+google-api-python-client
