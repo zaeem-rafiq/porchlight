@@ -2,16 +2,13 @@
 
 ## Done
 
-- HAC-24 P-00 planning: plan at `docs/plans/2026-09-07-1048-feat-porchlight-p00-preflight-plan.md` (implementation-ready).
-- HAC-24 marked In Progress in Linear; branch `zaeem/hac-24-p-00-pre-flight-bootstrap-two-twilio-channels-nws-calendar` created from empty root.
-- U1 skeleton committed (41962bd): LICENSE, .gitignore, .env.example, requirements, README, `.agents/rules/porchlight.md` (global rules, `trigger: always_on`), docs skeleton.
-- U2 code committed (same commit): `agent/safety.py` allowlist guard + `tests/test_safety.py` (2 passed, no live sends) + `scripts/preflight.py` gate.
-- Guard proof observed: `pytest tests/test_safety.py -q` → 2 passed.
+- HAC-24 P-00 DONE (Linear marked Done, proof commented): full PROOF PASS, exit 0, committed as 7b3a932 on `zaeem/hac-24-p-00-pre-flight-bootstrap-two-twilio-channels-nws-calendar` (local-only, no remote configured). Proof + 5-line walkthrough in `docs/proofs/P-00.md`.
+- Decisions: Bedrock = Sonnet 4.5 inference profile (Sonnet 5 not granted); AWS via login; Supabase `porchlight` schema REST-exposed via SQL block (PAT route abandoned).
+- Outstanding (non-blocking): enable Sonnet 5 in Bedrock Model access when convenient; `git remote add origin` + push before sharing.
 
 ## Next
 
-- Fill `.env` (user-owned), then run `python scripts/preflight.py` to exit 0, capture the `PROOF P-00:` line to `docs/proofs/P-00.md`, confirm two owner-phone texts, commit as `P-xx: <title> — PROOF PASS`, push, comment proof on HAC-24, mark Done, write 5-line walkthrough, then pick up HAC-25.
-- No remote is configured yet — first push will need `git remote add origin <url>` + `git push -u origin <branch>`.
+- HAC-25 P-01 (pre-condition P-00 PASS met): schema migrate + seed 40/5/3, protocol row, 2 fixtures; proofs on counts, allowlist, idempotent reset. Placeholders = fictional 555 numbers to append to PHONE_ALLOWLIST (safe, unassigned range).
 
 ## Anything I must do (needs Zaeem)
 
