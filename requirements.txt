@@ -11,3 +11,4 @@ pytest
 python-dotenv
 httpx
 google-api-python-client
+psycopg[binary]
