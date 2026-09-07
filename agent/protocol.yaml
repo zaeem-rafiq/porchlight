@@ -1,0 +1,28 @@
+# Porchlight protocol source (P-02). DB row `protocol/v1` mirrors the ladder copy.
+event_types:
+  - "Extreme Heat Warning"
+  - "Excessive Heat Warning"
+  - "Heat Advisory"
+  - "Extreme Cold Warning"
+  - "Winter Storm Warning"
+  - "Power Outage"
+type_map:
+  "Extreme Heat Warning": heat
+  "Excessive Heat Warning": heat
+  "Heat Advisory": heat
+  "Extreme Cold Warning": cold
+  "Winter Storm Warning": cold
+  "Power Outage": outage
+tiers:
+  tier1_min_score: 5
+  tier2_min_score: 3
+  boundary_margin: 1
+scoring:
+  lives_alone: 2
+  no_ac_in_heat: 2
+  powered_device_in_outage: 3
+  powered_device_in_heat: 1
+  age_85_plus: 2
+  age_75_84: 1
+  mobility_wheelchair: 2
+  mobility_walker_or_limited: 1
