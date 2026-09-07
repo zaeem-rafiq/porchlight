@@ -2,16 +2,16 @@
 
 ## Done
 
-- HAC-24 P-00 DONE: full PROOF PASS exit 0, committed as 7b3a932 on `zaeem/hac-24-...` (local-only, no remote). Proof + walkthrough in `docs/proofs/P-00.md`.
-- HAC-25 P-01 DONE: triple PROOF PASS (40/5/3/1/2, 40/40 allowlisted 1 real, reset-twice identical), committed as 688c700 + psycopg pin c1fbf9b. Proof + walkthrough in `docs/proofs/P-01.md`.
-- HAC-26 P-02 DONE: live poll HTTP 200 with 2 alerts observed_only; inject dedupe 1 then 1 dupe; heat tier1=15/tier2=10/tier3=15 in 38s; outage tier1=16 with oxygen tier1 in 39s. Committed as 36d8f71. Proof + walkthrough in `docs/proofs/P-02.md`.
-- Decisions: Bedrock = Sonnet 4.5 inference profile (Sonnet 5 not granted); AWS via login; Supabase schema REST-exposed via SQL block (PAT route abandoned); `agent/models.py` now protected (ADR for changes).
-- Outstanding (non-blocking): enable Sonnet 5 in Bedrock Model access when convenient; `git remote add origin` + push before sharing.
+- HAC-24 P-00 DONE, HAC-25 P-01 DONE, HAC-26 P-02 DONE (proofs commented, commits local-only).
+- HAC-27 P-03 DONE: all 5 proofs PASS over Telegram transport (ADR-004). Wave 40 sent (1 real); "1"→ok no model; dizzy→medical/cooling/quoted; 3 simulated triaged + ladder on 1-min clock; STOP→opted_out with re-wave real=0. Committed as be0e574. Proof + walkthrough in `docs/proofs/P-03.md`.
+- Transport state: SMS blocked both roads (30034 long-code A2P failed; 30032 toll-free needs verification). Toll-free …5152 bought. Telegram bot bound to owner. ADR-003 single-sender; ADR-001/002 triage model fixes. `agent/models.py` protected.
+- Outstanding: TFV submission (owner console); Sonnet 5 grant; `git remote add origin` + push.
 
 ## Next
 
-- HAC-27 P-03 outreach wave + per-resident conversation agents (needs owner REAL phone for proofs — STOP condition; never simulate owner replies).
+- HAC-28 P-04 dispatcher + the one consolidated coordinator ping (needs owner phone for the ping proof; coordinator commands via `COORD ` prefix per ADR-003).
 
 ## Anything I must do (needs Zaeem)
 
-- Nothing blocking right now. HAC-27+ proofs need the owner real phone: texts will arrive, reply as instructed, and work continues.
+- Watch for the toll-free verification approval; SMS wave re-proof runs when it clears.
+- P-04 ping will text the owner — reply as instructed when asked.
