@@ -16,6 +16,6 @@
 ## Anything I must do (needs Zaeem)
 
 - AWS auth done via `aws login` (account 292341338711, region us-east-1) — preflight env gate relaxed in 8cb1a0e, no AWS keys needed in `.env`.
-- Supabase: service key verified working (`rest_root=200`); project ref confirmed in key claims. PAT route failed 3 rounds (persistent 403 on project read) — pivoted to dashboard path B.
+- Supabase DONE (verified): `porchlight` schema exists and is REST-exposed (PGRST205 probe), service key works (`rest_root=200`). PAT/Management-API route abandoned after persistent 403s; SQL-block route used instead.
 - Still missing in `.env`: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_NUMBER_A, TWILIO_NUMBER_B, OWNER_PHONE, PHONE_ALLOWLIST, DEMO_ZONE. (`.env` is gitignored, never committed.)
 - Confirm the second Twilio number (number B) is purchased (pre-approved, ~$1/month).

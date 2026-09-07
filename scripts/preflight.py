@@ -84,8 +84,8 @@ def check_agentcore() -> None:
     try:
         import boto3
 
-        client = boto3.client("bedrock-agentcore", region_name=getenv("AWS_REGION") or None)
-        client.list_runtimes(maxResults=1)
+        client = boto3.client("bedrock-agentcore-control", region_name=getenv("AWS_REGION") or None)
+        client.list_agent_runtimes(maxResults=1)
         record("agentcore", "PASS")
     except Exception as exc:  # noqa: BLE001
         record("agentcore", "FAIL", type(exc).__name__)
