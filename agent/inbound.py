@@ -103,6 +103,25 @@ def handle_inbound(from_phone: str, to_number: str, body: str, event_id: str) ->
         send_help(from_phone)
         return {"outcome": "help_sent", "resident": resident["name"]}
 
+    from agent import coordinator as coord
+
+    owner = os.environ.get("OWNER_PHONE", "").strip()
+    if from_phone == owner:
+        cmd = None
+        if upper.startswith("COORD "):
+            cmd = text[6:].strip()
+        elif to_number != number_b:
+            cmd = text
+        elif text in ("1", "2", "3") and coord.pending_open(sb, event_id):
+            mine = sb.table("contacts").select("status").eq(
+                "event_id", event_id).eq("resident_id", resident["id"]).execute().data
+            if mine and mine[0]["status"] not in ("sent", "pending", "resent"):
+                cmd = text
+        if cmd is not None:
+            out = coord.handle_coordinator_reply(sb, event_id, cmd)
+            out["resident"] = resident["name"]
+            return out
+
     agent = ResidentAgent(event_id, resident)
     result, used_model = agent.triage(text)
     sb.table("contacts").update({

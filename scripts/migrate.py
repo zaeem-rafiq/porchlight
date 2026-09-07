@@ -55,8 +55,8 @@ def main() -> int:
         print(f"migrate=FAIL {type(exc).__name__} {msg[:300]}")
         return 1
     print("tables=" + str(len(tables)))
-    print("migrate=" + ("PASS" if len(tables) == 9 else "CHECK:" + ",".join(tables)))
-    return 0 if len(tables) == 9 else 1
+    print("migrate=" + ("PASS" if len(tables) == 10 else "CHECK:" + ",".join(tables)))
+    return 0 if len(tables) == 10 else 1
 
 
 if __name__ == "__main__":
