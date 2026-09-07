@@ -32,8 +32,10 @@ def getenv(name: str) -> str:
 
 
 def check_env() -> bool:
+    # AWS auth accepts `aws login` (default credential chain) so no AWS keys
+    # are required here; check_aws proves the chain with an STS call and
+    # region falls back to the shared config when AWS_REGION is unset.
     required = [
-        "AWS_REGION",
         "BEDROCK_MODEL_ID",
         "SUPABASE_URL",
         "SUPABASE_SERVICE_KEY",
