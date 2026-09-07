@@ -27,10 +27,11 @@ class TierPlan(BaseModel):
 
 
 class Triage(BaseModel):
-    status: str = Field(description="ok | needs_help | medical | unreachable | opted_out")
-    need: str = Field(default="", description="transport | power | wellness | cooling | none")
+    status: str = Field(description="ok | needs_help | medical | unclear | unreachable | opted_out")
+    need: str = Field(default="", description="none | cooling | transport | power | wellness_check | other (ADR-002)")
     confidence: float = 0.0
     reason: str = ""
+    quote: str = Field(default="", description="resident's exact words that decided it (ADR-001)")
 
 
 class Dispatch(BaseModel):
