@@ -41,6 +41,8 @@ def triage_reply(body: str, resident: dict) -> tuple[Triage, bool]:
             "Medical means possible danger to health or safety (dizziness, chest pain, "
             "no power for a medical device, fall, confusion). "
             "Set need to cooling, transport, power, wellness_check, other, or none. "
+            "Dizziness, fever, or overheating symptoms in heat mean the primary need "
+            "is cooling. "
             "Quote the exact words that decided it. Write the reason field in the "
             "resident's own language. Output discipline: unreachable means no reply "
             "arrived, so never classify a received reply as unreachable. Figurative or "
