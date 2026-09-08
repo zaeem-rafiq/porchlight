@@ -32,7 +32,8 @@ def triage_reply(body: str, resident: dict) -> tuple[Triage, bool]:
 
     agent = Agent(
         model=BedrockModel(model_id=os.environ.get("BEDROCK_MODEL_ID", ""),
-                           region_name=os.environ.get("AWS_REGION", "") or None),
+                           region_name=os.environ.get("AWS_REGION", "") or None,
+                           temperature=0.0),
         structured_output_model=Triage,
         system_prompt=(
             "You triage wellness check-in replies from vulnerable neighbors. "
