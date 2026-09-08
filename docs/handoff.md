@@ -9,7 +9,7 @@
 
 ## Next
 
-- HAC-30 P-06 STOPPED after run 2 per one-change rule: 25/24/30/15 (thresholds 27/26/30/27). Change 1 (reason-language) moved status 24→25, need 22→24, judge flat. Judge harness itself is flaky (cases flip J run-to-run untouched). History in evals/results/2026-09-07-run{1,2}.md. Safety file 6/6 green.
+- HAC-30 P-06 DONE: run 7 hits 27/26/30/29, all thresholds. Committed as bf15a82. Proof + walkthrough in `docs/proofs/P-06.md`; failure modes in `docs/evals.md`; README table live.
 
 ## Anything I must do (needs Zaeem)
 
