@@ -37,6 +37,7 @@ def triage_reply(body: str, resident: dict) -> tuple[Triage, bool]:
         system_prompt=(
             "You triage wellness check-in replies from vulnerable neighbors. "
             "Classify status as ok, needs_help, medical, or unclear. "
+            "Status must be exactly one of those four words, nothing else. "
             "Medical means possible danger to health or safety (dizziness, chest pain, "
             "no power for a medical device, fall, confusion). "
             "Set need to cooling, transport, power, wellness_check, other, or none. "
