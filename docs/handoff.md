@@ -9,7 +9,7 @@
 
 ## Next
 
-- HAC-30 P-06 triage evals + safety assertions. Special STOP: after the FIRST full eval run, hand FAIL traces to owner for labeling — no prompt/fixture changes until labeled.
+- HAC-30 P-06 STOPPED after first full run per stop condition: status 24/30, need 22/30, quote 30/30, judge 15/30 (thresholds 27/26/30/27). FAIL traces in `evals/results/2026-09-07.md` await owner failure-mode labels. No prompt/fixture changes until labeled. Safety file 6/6 green.
 
 ## Anything I must do (needs Zaeem)
 
