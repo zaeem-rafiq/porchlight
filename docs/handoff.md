@@ -9,7 +9,7 @@
 
 ## Next
 
-- HAC-30 P-06 STOPPED after first full run per stop condition: status 24/30, need 22/30, quote 30/30, judge 15/30 (thresholds 27/26/30/27). FAIL traces in `evals/results/2026-09-07.md` await owner failure-mode labels. No prompt/fixture changes until labeled. Safety file 6/6 green.
+- HAC-30 P-06 STOPPED after run 2 per one-change rule: 25/24/30/15 (thresholds 27/26/30/27). Change 1 (reason-language) moved status 24→25, need 22→24, judge flat. Judge harness itself is flaky (cases flip J run-to-run untouched). History in evals/results/2026-09-07-run{1,2}.md. Safety file 6/6 green.
 
 ## Anything I must do (needs Zaeem)
 
