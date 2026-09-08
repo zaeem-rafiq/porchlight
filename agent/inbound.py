@@ -102,6 +102,12 @@ def handle_inbound(from_phone: str, to_number: str, body: str, event_id: str) ->
     if upper == "HELP":
         send_help(from_phone)
         return {"outcome": "help_sent", "resident": resident["name"]}
+    if upper in ("START", "UNSTOP", "YES"):
+        sb.table("residents").update({"opted_out": False}).eq("id", resident["id"]).execute()
+        sb.table("audit_log").insert({
+            "event_id": event_id, "actor": "inbound", "action": "opt_in",
+            "detail": resident["name"]}).execute()
+        return {"outcome": "opted_in", "resident": resident["name"]}
 
     from agent import coordinator as coord
 

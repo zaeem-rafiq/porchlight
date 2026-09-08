@@ -46,6 +46,9 @@ def get_updates(offset: int = 0, timeout: int = 30) -> tuple[list[dict], int]:
 
 
 def owner_chat_id() -> str:
+    chat = (os.environ.get("TELEGRAM_OWNER_CHAT_ID", "") or "").strip()
+    if chat:
+        return chat
     return (_env().get("TELEGRAM_OWNER_CHAT_ID", "") or "").strip()
 
 

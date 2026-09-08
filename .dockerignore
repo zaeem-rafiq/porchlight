@@ -1,0 +1,13 @@
+.env
+.venv/
+.git/
+agentcore/cdk/node_modules/
+agentcore/cdk/cdk.out/
+.aws-sam/
+__pycache__/
+*.pyc
+.pytest_cache/
+docs/
+data/
+tests/
+.gitkeep

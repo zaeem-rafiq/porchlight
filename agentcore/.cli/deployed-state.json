@@ -1,0 +1,17 @@
+{
+  "targets": {
+    "default": {
+      "resources": {
+        "runtimes": {
+          "porchlight": {
+            "runtimeId": "porchlight_porchlight-RSlQTA9oTe",
+            "runtimeArn": "arn:aws:bedrock-agentcore:us-east-1:292341338711:runtime/porchlight_porchlight-RSlQTA9oTe",
+            "roleArn": "arn:aws:iam::292341338711:role/AgentCore-porchlight-defa-ApplicationAgentPorchligh-YEOhkp2SGVOg"
+          }
+        },
+        "stackName": "AgentCore-porchlight-default",
+        "deployHash": "748c0dd01838c2e2"
+      }
+    }
+  }
+}

@@ -21,3 +21,12 @@ Thumbs.db
 # Node (console/ lands in P-07)
 node_modules/
 .next/
+
+# AgentCore CLI + SAM build outputs
+agentcore/cdk/node_modules/
+agentcore/cdk/cdk.out/
+agentcore/.cli/logs/
+.aws-sam/
+*.log
+dryrun.log
+deploy*.log

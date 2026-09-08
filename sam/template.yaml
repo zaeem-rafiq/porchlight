@@ -1,0 +1,115 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Porchlight P-05 Lambda glue (nws_poll, twilio_inbound, tick)
+
+Parameters:
+  RuntimeArn:
+    Type: String
+  DemoZone:
+    Type: String
+    Default: ARZ001
+
+Globals:
+  Function:
+    Runtime: python3.13
+    Architectures: [arm64]
+    Timeout: 120
+    MemorySize: 256
+    Environment:
+      Variables:
+        RUNTIME_ARN: !Ref RuntimeArn
+        DEMO_ZONE: !Ref DemoZone
+        SUPABASE_URL: "{{resolve:secretsmanager:porchlight/app:SecretString:SUPABASE_URL}}"
+        SUPABASE_SERVICE_KEY: "{{resolve:secretsmanager:porchlight/app:SecretString:SUPABASE_SERVICE_KEY}}"
+        TWILIO_AUTH_TOKEN: "{{resolve:secretsmanager:porchlight/app:SecretString:TWILIO_AUTH_TOKEN}}"
+        TWILIO_NUMBER_A: "{{resolve:secretsmanager:porchlight/app:SecretString:TWILIO_NUMBER_A}}"
+        TWILIO_NUMBER_B: "{{resolve:secretsmanager:porchlight/app:SecretString:TWILIO_NUMBER_B}}"
+
+Resources:
+  GlueRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: lambda.amazonaws.com}
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: porchlight-glue
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: bedrock-agentcore:InvokeAgentRuntime
+                Resource: "*"
+
+  NwsPoll:
+    Type: AWS::Serverless::Function
+    Metadata: {BuildMethod: python3.13}
+    Properties:
+      CodeUri: ../lambda/
+      Handler: handlers.nws_poll_handler
+      Role: !GetAtt GlueRole.Arn
+
+  TwilioInbound:
+    Type: AWS::Serverless::Function
+    Metadata: {BuildMethod: python3.13}
+    Properties:
+      CodeUri: ../lambda/
+      Handler: handlers.twilio_inbound_handler
+      Role: !GetAtt GlueRole.Arn
+      FunctionUrlConfig:
+        AuthType: NONE
+
+  Tick:
+    Type: AWS::Serverless::Function
+    Metadata: {BuildMethod: python3.13}
+    Properties:
+      CodeUri: ../lambda/
+      Handler: handlers.tick_handler
+      Role: !GetAtt GlueRole.Arn
+
+  SchedulerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: scheduler.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: invoke-glue
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource:
+                  - !GetAtt NwsPoll.Arn
+                  - !GetAtt Tick.Arn
+
+  NwsPollSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      ScheduleExpression: rate(15 minutes)
+      FlexibleTimeWindow: {Mode: "OFF"}
+      Target:
+        Arn: !GetAtt NwsPoll.Arn
+        RoleArn: !GetAtt SchedulerRole.Arn
+
+  TickSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      ScheduleExpression: rate(5 minutes)
+      FlexibleTimeWindow: {Mode: "OFF"}
+      Target:
+        Arn: !GetAtt Tick.Arn
+        RoleArn: !GetAtt SchedulerRole.Arn
+
+Outputs:
+  InboundUrl:
+    Value: !GetAtt TwilioInboundUrl.FunctionUrl
