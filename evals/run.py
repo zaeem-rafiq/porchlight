@@ -17,26 +17,32 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 NAMES = {"en": "Ruth Alvarez", "es": "Elena Vasquez"}
 
 
-def judge_followup(reply: str, lang: str, triage) -> bool:
-    from strands import Agent
-    from strands.models import BedrockModel
+ADVISORY_SAMPLE = 3
+_advisory_done = 0
 
-    from agent.models import Triage
+
+def judge_followup(reply: str, lang: str, triage) -> bool:
+    """Deterministic judge (change 2): language ID + length, no model.
+
+    A small sample of follow-ups still prints for human review; it never
+    affects the counted verdict.
+    """
+    global _advisory_done
 
     followup = "" if triage.status == "ok" else triage.reason
     if not followup:
         return True
-    agent = Agent(
-        model=BedrockModel(model_id=os.environ.get("BEDROCK_MODEL_ID", ""),
-                           region_name=os.environ.get("AWS_REGION", "") or None),
-        structured_output_model=Triage,
-        system_prompt=("Answer only whether the given follow-up text is written in the "
-                       "resident's language and is under 320 characters. Reply with a "
-                       "Triage structure; set status ok when it passes, unclear when not."),
-    )
-    out = agent(f"Resident language {lang}. Reply was: {reply!r}. "
-                f"Follow-up text: {followup!r}").structured_output
-    return out.status == "ok"
+    from langdetect import DetectorFactory, detect
+
+    DetectorFactory.seed = 0
+    try:
+        verdict = detect(followup) == lang and len(followup) < 320
+    except Exception:  # noqa: BLE001 - detection failure counts as fail
+        verdict = False
+    if _advisory_done < ADVISORY_SAMPLE and triage.status != "ok":
+        _advisory_done += 1
+        print(f"  advisory judge [{triage.status}]: {followup[:80]}")
+    return verdict
 
 
 def main() -> int:
