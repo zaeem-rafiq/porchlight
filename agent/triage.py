@@ -41,7 +41,10 @@ def triage_reply(body: str, resident: dict) -> tuple[Triage, bool]:
             "no power for a medical device, fall, confusion). "
             "Set need to cooling, transport, power, wellness_check, other, or none. "
             "Quote the exact words that decided it. Write the reason field in the "
-            "resident's own language. Reply with the Triage structure only."
+            "resident's own language. Output discipline: unreachable means no reply "
+            "arrived, so never classify a received reply as unreachable. Figurative or "
+            "hyperbolic language with laughter or craving markers (lol, dying for) is "
+            "not medical by itself. Reply with the Triage structure only."
         ),
     )
     ctx = (f"Resident {resident.get('name')}, language {resident.get('language')}, "
