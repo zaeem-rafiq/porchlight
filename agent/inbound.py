@@ -2,7 +2,7 @@
 
 One ResidentAgent per resident (agents-as-tools, asyncio; session_id
 f"{event_id}:{resident_id}") holds the roster row and history. The same
-handle_inbound serves the Twilio webhook, the poll loop, and the console
+handle_inbound serves the Telegram webhook, the poll loop, and the console
 /simulated-inbound path (shared secret checked by the caller, P-07).
 """
 
@@ -61,6 +61,15 @@ def ladder_action(contact: dict, now_min: float, resend_after: float = RESEND_AF
     return None
 
 
+def _safe_audit(sb, event_id: str, actor: str, action: str, detail: str = "") -> None:
+    try:
+        sb.table("audit_log").insert({
+            "event_id": event_id, "actor": actor,
+            "action": action, "detail": detail}).execute()
+    except Exception:
+        pass
+
+
 def handle_inbound(from_phone: str, to_number: str, body: str, event_id: str) -> dict:
     """Route one inbound SMS. Returns an outcome dict (never raises on user input)."""
     from agent.safety import parse_allowlist
@@ -69,20 +78,26 @@ def handle_inbound(from_phone: str, to_number: str, body: str, event_id: str) ->
 
     load_dotenv()
     allowlist = parse_allowlist(os.environ.get("PHONE_ALLOWLIST", ""))
-    number_b = os.environ.get("TWILIO_NUMBER_B", "").strip()
+    bot_user = os.environ.get("TELEGRAM_BOT_USERNAME", "").lower().lstrip("@")
+    number_b = os.environ.get("TWILIO_NUMBER_B", "").strip().lower()
+    valid_channels = {
+        "telegram", "bot", "simulated", "sim", "console", "coordinator", "coord", "",
+    }
+    if bot_user:
+        valid_channels.add(bot_user)
+        valid_channels.add("@" + bot_user)
+    if number_b:
+        valid_channels.add(number_b)
+
     sb = _sb()
     now = datetime.now(timezone.utc).isoformat()
     text = body.strip()
 
     if from_phone not in allowlist:
-        sb.table("audit_log").insert({
-            "event_id": event_id, "actor": "inbound",
-            "action": "dropped_not_allowlisted", "detail": f"to={to_number}"}).execute()
+        _safe_audit(sb, event_id, "inbound", "dropped_not_allowlisted", f"to={to_number}")
         return {"outcome": "dropped", "reason": "not_allowlisted"}
-    if to_number != number_b:
-        sb.table("audit_log").insert({
-            "event_id": event_id, "actor": "inbound",
-            "action": "dropped_wrong_channel", "detail": f"to={to_number}"}).execute()
+    if to_number and to_number.strip().lower() not in valid_channels:
+        _safe_audit(sb, event_id, "inbound", "dropped_wrong_channel", f"to={to_number}")
         return {"outcome": "dropped", "reason": "wrong_channel"}
 
     residents = sb.table("residents").select("*").eq("phone", from_phone).execute().data
@@ -95,18 +110,14 @@ def handle_inbound(from_phone: str, to_number: str, body: str, event_id: str) ->
         sb.table("residents").update({"opted_out": True}).eq("id", resident["id"]).execute()
         sb.table("contacts").update({"status": "opted_out"}).eq(
             "event_id", event_id).eq("resident_id", resident["id"]).execute()
-        sb.table("audit_log").insert({
-            "event_id": event_id, "actor": "inbound", "action": "opt_out",
-            "detail": resident["name"]}).execute()
+        _safe_audit(sb, event_id, "inbound", "opt_out", resident["name"])
         return {"outcome": "opted_out", "resident": resident["name"]}
     if upper == "HELP":
         send_help(from_phone)
         return {"outcome": "help_sent", "resident": resident["name"]}
     if upper in ("START", "UNSTOP", "YES"):
         sb.table("residents").update({"opted_out": False}).eq("id", resident["id"]).execute()
-        sb.table("audit_log").insert({
-            "event_id": event_id, "actor": "inbound", "action": "opt_in",
-            "detail": resident["name"]}).execute()
+        _safe_audit(sb, event_id, "inbound", "opt_in", resident["name"])
         return {"outcome": "opted_in", "resident": resident["name"]}
 
     from agent import coordinator as coord
@@ -116,7 +127,9 @@ def handle_inbound(from_phone: str, to_number: str, body: str, event_id: str) ->
         cmd = None
         if upper.startswith("COORD "):
             cmd = text[6:].strip()
-        elif to_number != number_b:
+        elif upper.startswith("/COORD "):
+            cmd = text[7:].strip()
+        elif to_number.strip().lower() in ("coordinator", "coord"):
             cmd = text
         elif text in ("1", "2", "3") and coord.pending_open(sb, event_id):
             mine = sb.table("contacts").select("status").eq(
@@ -133,9 +146,20 @@ def handle_inbound(from_phone: str, to_number: str, body: str, event_id: str) ->
     sb.table("contacts").update({
         "status": result.status, "last_inbound": now}).eq(
         "event_id", event_id).eq("resident_id", resident["id"]).execute()
-    sb.table("audit_log").insert({
-        "event_id": event_id, "actor": "inbound", "action": f"triage:{result.status}",
-        "detail": f"{resident['name']} need={result.need} quote={result.quote[:80]}"}).execute()
+    _safe_audit(sb, event_id, "inbound", f"triage:{result.status}",
+                f"{resident['name']} need={result.need} quote={result.quote[:80]}")
+
+    if result.status == "medical":
+        try:
+            from agent.coordinator import compose_ping, pending_add, send_ping
+            pending_add(sb, event_id, "escalate_medical", {"resident_name": resident["name"], "quote": result.quote})
+            ev_rows = sb.table("hazard_events").select("headline").eq("id", event_id).execute().data
+            headline = ev_rows[0]["headline"] if ev_rows else "Extreme Weather"
+            ping_text = compose_ping(sb, event_id, headline)
+            send_ping(sb, event_id, ping_text)
+        except Exception:
+            pass
+
     return {"outcome": "triaged", "resident": resident["name"],
             "status": result.status, "need": result.need,
             "quote": result.quote, "used_model": used_model}
@@ -146,8 +170,8 @@ def send_help(to_phone: str) -> None:
     text = ("Porchlight Neighbors: reply 1 if OK, 2 for help. "
             "We check on you in extreme weather. Reply STOP to opt out.")
     if to_phone == owner:
-        from twilio.rest import Client
+        from agent.telegram import owner_chat_id, send_message
 
-        Client(os.environ.get("TWILIO_ACCOUNT_SID", ""),
-               os.environ.get("TWILIO_AUTH_TOKEN", "")).messages.create(
-            body=text, from_=os.environ.get("TWILIO_NUMBER_B", "").strip(), to=to_phone)
+        chat = owner_chat_id()
+        if chat:
+            send_message(chat, text)

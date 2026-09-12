@@ -2,7 +2,7 @@
 
 For every needs_help/medical triage, match the need to a resource (nearest
 open cooling center, or power/wellness guidance) and, for transport, to an
-opted-in volunteer. Volunteer asks go out from number B (real only for the
+opted-in volunteer. Volunteer asks go out via Telegram (real only for the
 owner; placeholders simulated). On Y, a Calendar event is created (or the
 step logs skipped when no token is configured).
 """
@@ -71,13 +71,15 @@ def ask_volunteer(sb, dispatch: Dispatch, event_id: str, owner_phone: str) -> di
     body = (f"Porchlight: can you take {dispatch.resident_name} to {dispatch.resource_name} "
             f"at 2pm? Reply Y or N")
     if vol["phone"] == owner_phone:
-        from twilio.rest import Client
+        from agent.telegram import owner_chat_id, send_message
 
-        sid = Client(os.environ.get("TWILIO_ACCOUNT_SID", ""),
-                     os.environ.get("TWILIO_AUTH_TOKEN", "")).messages.create(
-            body=body, from_=os.environ.get("TWILIO_NUMBER_B", "").strip(),
-            to=vol["phone"]).sid
-        channel = "twilio"
+        chat = owner_chat_id()
+        try:
+            mid = send_message(chat, body) if chat else 0
+        except Exception as exc:
+            sys.stderr.write(f"telegram_send_error in ask_volunteer: {exc}\n")
+            mid = 0
+        sid, channel = f"TG-{mid}", "telegram"
     else:
         sid, channel = f"SIM-VOL-{abs(hash(body)) % 10**8:08d}", "simulated"
     row = sb.table("dispatches").insert({

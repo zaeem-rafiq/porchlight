@@ -3,7 +3,6 @@ strands-agents-tools
 bedrock-agentcore
 bedrock-agentcore-starter-toolkit
 supabase
-twilio
 boto3
 pydantic
 pyyaml

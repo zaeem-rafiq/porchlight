@@ -3,8 +3,8 @@
 Gate tools (escalate_medical, mark_unreachable_tier1, dispatch_without_volunteer)
 are Strands @tools whose BeforeToolCallEvent hook records the decision and
 interrupts with "coordinator-decision" instead of executing. The coordinator
-gets ONE ping per 15-minute window (from number B with [Coordinator] prefix
-per ADR-003; Telegram while SMS is blocked per ADR-004) and replies 1/2/3
+gets ONE ping per 15-minute window (via Telegram with [Coordinator] prefix
+per ADR-003 and ADR-004) and replies 1/2/3
 (optionally COORD-prefixed). Bare digits route here only when a ping is
 pending and the owner's resident contact is already triaged.
 
@@ -34,8 +34,10 @@ pending: list[dict] = []
 
 
 def pending_open(sb, event_id: str) -> list[dict]:
-    return sb.table("gate_pending").select("*").eq("event_id", event_id).eq(
-        "status", "open").order("created_at").execute().data
+    q = sb.table("gate_pending").select("*").eq("event_id", event_id).eq("status", "open")
+    if hasattr(q, "order"):
+        q = q.order("created_at")
+    return q.execute().data
 
 
 def pending_add(sb, event_id: str, tool_name: str, tool_input: dict) -> None:
@@ -124,7 +126,11 @@ def send_ping(sb, event_id: str, text: str) -> dict:
     from agent.telegram import owner_chat_id, send_message
 
     chat = owner_chat_id()
-    mid = send_message(chat, text) if chat else 0
+    try:
+        mid = send_message(chat, text) if chat else 0
+    except Exception as exc:
+        sys.stderr.write(f"telegram_send_error in send_ping: {exc}\n")
+        mid = 0
     audit(sb, event_id, "coordinator_ping", f"mid={mid}")
     return {"channel": "telegram", "mid": mid}
 
@@ -171,12 +177,15 @@ def silence_check(sb, event_id: str, contact: dict, age_min: float,
     body = (f"Porchlight: please check on {resident['name']} ({resident.get('notes', '')[:60]}); "
             f"if you can't reach them, call 911.")
     if ec == owner:
-        from twilio.rest import Client
+        from agent.telegram import owner_chat_id, send_message
 
-        sid = Client(os.environ.get("TWILIO_ACCOUNT_SID", ""),
-                     os.environ.get("TWILIO_AUTH_TOKEN", "")).messages.create(
-            body=body, from_=os.environ.get("TWILIO_NUMBER_B", "").strip(), to=ec).sid
-        channel = "twilio"
+        chat = owner_chat_id()
+        try:
+            mid = send_message(chat, body) if chat else 0
+        except Exception as exc:
+            sys.stderr.write(f"telegram_send_error in silence_check: {exc}\n")
+            mid = 0
+        sid, channel = f"TG-{mid}", "telegram"
     else:
         sid, channel = f"SIM-EC-{abs(hash((ec, body))) % 10**8:08d}", "simulated"
     sb.table("escalations").insert({

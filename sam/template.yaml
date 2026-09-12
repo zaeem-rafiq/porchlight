@@ -24,6 +24,7 @@ Globals:
         TWILIO_AUTH_TOKEN: "{{resolve:secretsmanager:porchlight/app:SecretString:TWILIO_AUTH_TOKEN}}"
         TWILIO_NUMBER_A: "{{resolve:secretsmanager:porchlight/app:SecretString:TWILIO_NUMBER_A}}"
         TWILIO_NUMBER_B: "{{resolve:secretsmanager:porchlight/app:SecretString:TWILIO_NUMBER_B}}"
+        CONSOLE_KEY: "{{resolve:secretsmanager:porchlight/app:SecretString:CONSOLE_KEY}}"
 
 Resources:
   GlueRole:

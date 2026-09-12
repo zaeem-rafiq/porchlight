@@ -1,12 +1,12 @@
-"""Outreach wave (P-03): tier-1 then tier-2 from Twilio number B.
+"""Outreach wave (P-03): tier-1 then tier-2 via Telegram.
 
 Copy: org name, hazard in plain words, first name, reply 1/2 prompt.
 First contact to a number carries 'Reply STOP to opt out'. Plain words,
 no jargon, no exclamation marks. Spanish template gets one model review
 pass (cached), not machine-literal.
 
-Routing: the owner's real phone sends via Twilio for real. Placeholder
-numbers (fictional 555 range) cannot receive SMS, so they are recorded
+Routing: the owner's real phone sends via Telegram for real. Placeholder
+numbers (fictional 555 range) cannot receive messages, so they are recorded
 through the same path as sent/simulated — the console's simulated-reply
 path answers for them later. Never the reverse: owner replies are never
 simulated.
@@ -48,18 +48,21 @@ def reviewed_template(lang: str) -> str:
     if lang == "en":
         _reviewed[lang] = TEMPLATES[lang]
         return _reviewed[lang]
-    from strands import Agent
-    from strands.models import BedrockModel
+    try:
+        from strands import Agent
+        from strands.models import BedrockModel
 
-    agent = Agent(
-        model=BedrockModel(model_id=os.environ.get("BEDROCK_MODEL_ID", ""),
-                           region_name=os.environ.get("AWS_REGION", "") or None),
-        system_prompt=("You review SMS copy for elderly Spanish speakers. Keep it short, "
-                       "warm, plain words, no jargon, no exclamation marks. Keep the "
-                       "{org} and {name} slots exactly. Reply with the revised text only."),
-    )
-    result = agent(f"Review this heat outreach text: {TEMPLATES[lang]}")
-    _reviewed[lang] = str(result).strip() or TEMPLATES[lang]
+        agent = Agent(
+            model=BedrockModel(model_id=os.environ.get("BEDROCK_MODEL_ID", ""),
+                               region_name=os.environ.get("AWS_REGION", "") or None),
+            system_prompt=("You review SMS copy for elderly Spanish speakers. Keep it short, "
+                           "warm, plain words, no jargon, no exclamation marks. Keep the "
+                           "{org} and {name} slots exactly. Reply with the revised text only."),
+        )
+        result = agent(f"Review this heat outreach text: {TEMPLATES[lang]}")
+        _reviewed[lang] = str(result).strip() or TEMPLATES[lang]
+    except Exception:
+        _reviewed[lang] = TEMPLATES[lang]
     return _reviewed[lang]
 
 
@@ -68,14 +71,17 @@ def is_real_phone(phone: str, owner_phone: str) -> bool:
 
 
 def send_one(sb, to_phone: str, from_number: str, body: str, owner_phone: str) -> tuple[str, str]:
-    """Returns (sid, channel). Real Twilio send for the owner; recorded simulated send otherwise."""
+    """Returns (sid, channel). Real Telegram send for the owner; recorded simulated send otherwise."""
     if is_real_phone(to_phone, owner_phone):
-        from twilio.rest import Client
+        from agent.telegram import owner_chat_id, send_message
 
-        msg = Client(os.environ.get("TWILIO_ACCOUNT_SID", ""),
-                     os.environ.get("TWILIO_AUTH_TOKEN", "")).messages.create(
-            body=body, from_=from_number, to=to_phone)
-        return msg.sid, "twilio"
+        chat = owner_chat_id()
+        try:
+            mid = send_message(chat, body) if chat else 0
+        except Exception as exc:
+            sys.stderr.write(f"telegram_send_error in send_one: {exc}\n")
+            mid = 0
+        return f"TG-{mid}", "telegram"
     return f"SIM-{abs(hash((to_phone, body))) % 10**8:08d}", "simulated"
 
 
@@ -89,7 +95,7 @@ def send_wave(event_id: str, tier_map: dict[str, int], tiers: tuple[int, ...] = 
     url = os.environ.get("SUPABASE_URL", "").rstrip("/")
     key = os.environ.get("SUPABASE_SERVICE_KEY", "")
     owner = os.environ.get("OWNER_PHONE", "").strip()
-    from_number = os.environ.get("TWILIO_NUMBER_B", "").strip()
+    from_number = os.environ.get("TELEGRAM_BOT_USERNAME", "telegram")
     sb = create_client(url, key).schema("porchlight")
 
     residents = sb.table("residents").select("*").eq("opted_out", False).execute().data
@@ -115,5 +121,5 @@ def send_wave(event_id: str, tier_map: dict[str, int], tiers: tuple[int, ...] = 
             }).execute()
             sent += 1
             simulated += channel == "simulated"
-            real += channel == "twilio"
+            real += channel == "telegram"
     return {"sent": sent, "simulated": simulated, "real": real}

@@ -98,9 +98,11 @@ def on_inbound_coordinator(payload: dict) -> dict:
 
     cfg = get_config()
     body = payload["body"]
-    if not body.upper().startswith("COORD ") and body.strip() in ("1", "2", "3"):
+    if body.lower().startswith("/coord "):
+        body = "COORD " + body[7:].strip()
+    elif not body.upper().startswith("COORD ") and body.strip() in ("1", "2", "3"):
         body = "COORD " + body.strip()
-    return handle_inbound(cfg["OWNER_PHONE"], cfg["TWILIO_NUMBER_B"], body, payload["event_id"])
+    return handle_inbound(cfg["OWNER_PHONE"], "telegram", body, payload["event_id"])
 
 
 def on_inbound_volunteer(payload: dict) -> dict:

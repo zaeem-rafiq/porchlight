@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -35,7 +36,14 @@ def api(method: str, payload: dict | None = None) -> dict:
 
 
 def send_message(chat_id: str, text: str) -> int:
-    return int(api("sendMessage", {"chat_id": chat_id, "text": text}).get("result", {}).get("message_id", 0))
+    if not chat_id or not text or not str(text).strip():
+        return 0
+    try:
+        res = api("sendMessage", {"chat_id": str(chat_id), "text": str(text)})
+        return int(res.get("result", {}).get("message_id", 0))
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, Exception) as exc:
+        sys.stderr.write(f"telegram_send_error: {exc}\n")
+        return 0
 
 
 def get_updates(offset: int = 0, timeout: int = 30) -> tuple[list[dict], int]:

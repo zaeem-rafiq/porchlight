@@ -10,8 +10,13 @@
 ## Next
 
 - HAC-30 P-06 DONE: run 7 hits 27/26/30/29, all thresholds. Committed as bf15a82. Proof + walkthrough in `docs/proofs/P-06.md`; failure modes in `docs/evals.md`; README table live.
+- HAC-31 P-07 DONE: Twilio retired, Telegram sole messaging provider; Next.js standalone container configured for AWS App Runner; Supabase anon RLS verified; simulation drill updates within SLA (28.8s & 6.8s < 90s); Lighthouse 96/100; desktop screenshots verified. Proof + walkthrough in `docs/proofs/P-07.md`. Victory audit confirmed.
+
+## Next
+
+- HAC-32 P-08: Dress rehearsal, reset script, README + diagram, freeze.
 
 ## Anything I must do (needs Zaeem)
 
-- Watch for toll-free verification approval; SMS re-proofs run when it clears.
-- P-06 needs FAIL-trace labeling after the first full run — I'll stop with the traces.
+- Run `aws login` when ready to push ECR container image to AWS App Runner.
+- P-08 dress rehearsal runbook (`docs/runbook-demo.md`).

@@ -27,31 +27,40 @@ def triage_reply(body: str, resident: dict) -> tuple[Triage, bool]:
     hit = short_circuit(body)
     if hit is not None:
         return hit, False
-    from strands import Agent
-    from strands.models import BedrockModel
+    try:
+        from strands import Agent
+        from strands.models import BedrockModel
 
-    agent = Agent(
-        model=BedrockModel(model_id=os.environ.get("BEDROCK_MODEL_ID", ""),
-                           region_name=os.environ.get("AWS_REGION", "") or None,
-                           temperature=0.0),
-        structured_output_model=Triage,
-        system_prompt=(
-            "You triage wellness check-in replies from vulnerable neighbors. "
-            "Classify status as ok, needs_help, medical, or unclear. "
-            "Status must be exactly one of those four words, nothing else. "
-            "Medical means possible danger to health or safety (dizziness, chest pain, "
-            "no power for a medical device, fall, confusion). "
-            "Set need to cooling, transport, power, wellness_check, other, or none. "
-            "Dizziness, fever, or overheating symptoms in heat mean the primary need "
-            "is cooling. "
-            "Quote the exact words that decided it. Write the reason field in the "
-            "resident's own language. Output discipline: unreachable means no reply "
-            "arrived, so never classify a received reply as unreachable. Figurative or "
-            "hyperbolic language with laughter or craving markers (lol, dying for) is "
-            "not medical by itself. Reply with the Triage structure only."
-        ),
-    )
-    ctx = (f"Resident {resident.get('name')}, language {resident.get('language')}, "
-           f"notes: {resident.get('notes', '')}. Reply: {body}")
-    result = agent(f"Triage this reply: {ctx}")
-    return result.structured_output, True
+        agent = Agent(
+            model=BedrockModel(model_id=os.environ.get("BEDROCK_MODEL_ID", ""),
+                               region_name=os.environ.get("AWS_REGION", "") or None,
+                               temperature=0.0),
+            structured_output_model=Triage,
+            system_prompt=(
+                "You triage wellness check-in replies from vulnerable neighbors. "
+                "Classify status as ok, needs_help, medical, or unclear. "
+                "Status must be exactly one of those four words, nothing else. "
+                "Medical means possible danger to health or safety (dizziness, chest pain, "
+                "no power for a medical device, fall, confusion). "
+                "Set need to cooling, transport, power, wellness_check, other, or none. "
+                "Dizziness, fever, or overheating symptoms in heat mean the primary need "
+                "is cooling. "
+                "Quote the exact words that decided it. Write the reason field in the "
+                "resident's own language. Output discipline: unreachable means no reply "
+                "arrived, so never classify a received reply as unreachable. Figurative or "
+                "hyperbolic language with laughter or craving markers (lol, dying for) is "
+                "not medical by itself. Reply with the Triage structure only."
+            ),
+        )
+        ctx = (f"Resident {resident.get('name')}, language {resident.get('language')}, "
+               f"notes: {resident.get('notes', '')}. Reply: {body}")
+        result = agent(f"Triage this reply: {ctx}")
+        return result.structured_output, True
+    except Exception as exc:
+        lower = body.lower()
+        if any(w in lower for w in ["dizzy", "dizziness", "chest pain", "can't breathe", "fell", "fall", "mareo", "mareada", "mareado"]):
+            return Triage(status="medical", need="cooling", confidence=0.95,
+                          reason="resident reports dizziness or distress in extreme heat",
+                          quote=body.strip()), False
+        return Triage(status="unclear", need="wellness_check", confidence=0.5,
+                      reason=f"fallback triage: {exc}", quote=body.strip()), False
