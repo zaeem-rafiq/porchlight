@@ -179,8 +179,9 @@ def test_anonymous_put_replacement_rejected_with_42501(anon_client: httpx.Client
         row = dict(rows[0])
         row_id = row.get("id", "00000000-0000-0000-0000-000000000000")
     else:
-        row = SAMPLE_INSERT_PAYLOADS.get(table, {"id": "fake"})
+        row = dict(SAMPLE_INSERT_PAYLOADS.get(table, {}))
         row_id = "00000000-0000-0000-0000-000000000000"
+        row["id"] = row_id
 
     resp = anon_client.put(f"/rest/v1/{table}?id=eq.{row_id}", json=row)
     assert resp.status_code in (401, 403), f"PUT on {table} must be rejected, got {resp.status_code}"
