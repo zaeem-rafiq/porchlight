@@ -32,16 +32,13 @@ if REPO_ROOT not in sys.path:
 # ==============================================================================
 
 def test_reset_demo_probes():
-    """Verifies that reset_demo.py probe functions execute correctly without errors."""
-    from scripts.reset_demo import probe_lambdas, probe_runtime
+    """Local deployment files must never substitute for unavailable AWS evidence."""
+    from scripts.reset_demo import configuration_diagnostics, probe_lambdas, probe_runtime
 
-    # Runtime probe should evaluate config/boto3 and return READY
-    runtime_status = probe_runtime()
-    assert runtime_status in ("READY", "AVAILABLE")
-
-    # Lambda probe should verify 3/3 handlers in lambda.handlers
-    lambdas_status = probe_lambdas()
-    assert lambdas_status == "3/3"
+    assert configuration_diagnostics() == {"runtime_config": True, "sam_template": True}
+    with patch("boto3.client", side_effect=RuntimeError("provider unavailable")):
+        assert probe_runtime() == "UNVERIFIED"
+        assert probe_lambdas() == "UNVERIFIED"
 
 
 def test_reset_demo_allowlist_assertion_aborts_on_unauthorized_number():
@@ -171,44 +168,31 @@ def test_runbook_demo_structure():
 
 
 def test_readme_specification_coverage():
-    """Verifies README.md covers all required P-08 specification sections."""
+    """Require audience, implemented boundaries, reproducible steps, and qualified evidence."""
     readme_path = os.path.join(REPO_ROOT, "README.md")
     assert os.path.isfile(readme_path), "Missing README.md"
 
     with open(readme_path, "r", encoding="utf-8") as fh:
         content = fh.read()
 
-    # Target Audience & Problem
-    assert "In an extreme heat wave" in content
-    assert "mutual-aid" in content.lower() or "senior centers" in content.lower()
+    lower = content.lower()
+    for topic in ("extreme heat", "senior centers", "synthetic residents", "strands",
+                  "structured", "coordinator", "agentcore runtime", "lambda",
+                  "eventbridge", "supabase", "telegram", "next.js"):
+        assert topic in lower, f"Missing audience or implementation topic: {topic}"
 
-    # Safety
-    assert "PHONE_ALLOWLIST" in content
-    assert "Never-911" in content
-    assert "STOP" in content
-    assert "Consent & Data Model" in content
+    for boundary in ("PHONE_ALLOWLIST", "STOP", "does not call emergency services",
+                     "human confirmation", "operator recovery"):
+        assert boundary in content, f"Missing operational boundary: {boundary}"
 
-    # Strands Features
-    assert "Agents-as-Tools" in content
-    assert "Structured Output" in content
-    assert "Hooks & Interrupts" in content
-    assert "Session Managers" in content
-    assert "AgentCore Memory" in content
+    for step in ("scripts/local_drill.py", "FUNCTION_URL=http://127.0.0.1:8765",
+                 "CONSOLE_KEY=local-drill", "npm ci", "npm run dev",
+                 "test_boundary_recovery.py"):
+        assert step in content, f"Missing reproduction instruction: {step}"
 
-    # AgentCore Services
-    assert "AgentCore Runtime" in content
-    assert "AgentCore Memory" in content
-    assert "AWS Lambda Glue" in content
-    assert "Secrets Manager" in content
-    assert "Amazon ECR" in content
-    assert "AWS App Runner" in content
-    assert "Amazon EventBridge" in content
-
-    # Evals
-    assert "27 / 30" in content
-    assert "26 / 30" in content
-    assert "30 / 30" in content
-    assert "29 / 30" in content
-
-    # License
-    assert "MIT License" in content
+    # Historic scores and optional architecture must not masquerade as current proof.
+    assert "docs/deadline-verification.md" in content
+    assert "historical results from an earlier implementation" in content
+    assert "not scores for the current" in content
+    assert "no publicly hosted console is claimed" in content
+    assert "[MIT](LICENSE)" in content

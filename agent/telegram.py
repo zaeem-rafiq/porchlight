@@ -38,11 +38,19 @@ def api(method: str, payload: dict | None = None) -> dict:
 def send_message(chat_id: str, text: str) -> int:
     if not chat_id or not text or not str(text).strip():
         return 0
+    from agent.safety import assert_allowed, parse_allowlist
+
+    env = _env()
+    owner_chat = env.get("TELEGRAM_OWNER_CHAT_ID", "").strip()
+    if not owner_chat or str(chat_id).strip() != owner_chat:
+        raise PermissionError("Refusing Telegram send outside the configured owner chat")
+    assert_allowed(env.get("OWNER_PHONE", ""), parse_allowlist(env.get("PHONE_ALLOWLIST", "")))
     try:
         res = api("sendMessage", {"chat_id": str(chat_id), "text": str(text)})
-        return int(res.get("result", {}).get("message_id", 0))
-    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, Exception) as exc:
-        sys.stderr.write(f"telegram_send_error: {exc}\n")
+        mid = res.get("result", {}).get("message_id", 0)
+        return mid if res.get("ok") is True and type(mid) is int and mid > 0 else 0
+    except Exception as exc:
+        sys.stderr.write(f"telegram_send_error: {type(exc).__name__}\n")
         return 0
 
 

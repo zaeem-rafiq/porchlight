@@ -55,12 +55,14 @@ def triage_reply(body: str, resident: dict) -> tuple[Triage, bool]:
         ctx = (f"Resident {resident.get('name')}, language {resident.get('language')}, "
                f"notes: {resident.get('notes', '')}. Reply: {body}")
         result = agent(f"Triage this reply: {ctx}")
-        return result.structured_output, True
-    except Exception as exc:
-        lower = body.lower()
-        if any(w in lower for w in ["dizzy", "dizziness", "chest pain", "can't breathe", "fell", "fall", "mareo", "mareada", "mareado"]):
-            return Triage(status="medical", need="cooling", confidence=0.95,
-                          reason="resident reports dizziness or distress in extreme heat",
-                          quote=body.strip()), False
-        return Triage(status="unclear", need="wellness_check", confidence=0.5,
-                      reason=f"fallback triage: {exc}", quote=body.strip()), False
+        value = result.structured_output
+        result = Triage.model_validate(value.model_dump() if isinstance(value, Triage) else value)
+        if result.status not in ("ok", "needs_help", "medical", "unclear"):
+            raise ValueError("received replies cannot be unreachable or opted out")
+        if not result.quote.strip() or result.quote not in body:
+            raise ValueError("triage quote must be verbatim resident text")
+        return result, True
+    except Exception:
+        return Triage(status="unclear", need="wellness_check", confidence=0.0,
+                      reason="Triage unavailable or invalid; coordinator review required.",
+                      quote=body.strip()), False

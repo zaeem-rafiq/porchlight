@@ -64,12 +64,12 @@ def telegram_inbound_handler(event, context):
                      "observed_only": False}, "console"))}
             if op == "volunteer":
                 return {"statusCode": 200, "body": json.dumps(_runtime(
-                    {"action": "inbound.volunteer", "dispatch_id": incoming.get("dispatch_id", ""),
+                    {"action": "inbound.volunteer", "from": incoming.get("from") or os.environ.get("OWNER_PHONE", ""), "dispatch_id": incoming.get("dispatch_id", ""),
                      "body": incoming.get("text", ""),
                      "event_id": incoming.get("event_id", "")}, "console"))}
             if op == "coordinator":
                 return {"statusCode": 200, "body": json.dumps(_runtime(
-                    {"action": "inbound.coordinator", "body": incoming.get("text", ""),
+                    {"action": "inbound.coordinator", "from": os.environ.get("OWNER_PHONE", ""), "body": f"{incoming.get('menu_token', '')} {incoming.get('text', '')}".strip(),
                      "event_id": incoming.get("event_id", "")}, "console"))}
             return {"statusCode": 200, "body": json.dumps(_runtime(
                 {"action": "inbound.resident", "from": incoming.get("from", ""),
@@ -100,12 +100,17 @@ def telegram_inbound_handler(event, context):
     if not isinstance(msg, dict):
         return {"statusCode": 200, "body": json.dumps({"ok": True, "ignored": "no_text"})}
 
+    if not isinstance(msg.get("text", ""), str):
+        return {"statusCode": 400, "body": json.dumps({"error": "text must be a string"})}
     text = (msg.get("text") or "").strip()
     chat_id = str((msg.get("chat") or {}).get("id", "")).strip() if isinstance(msg.get("chat"), dict) else ""
     from_id = str((msg.get("from") or {}).get("id", "")).strip() if isinstance(msg.get("from"), dict) else ""
 
     if not text:
         return {"statusCode": 200, "body": json.dumps({"ok": True, "ignored": "no_text"})}
+
+    if not secret_token:
+        return {"statusCode": 503, "body": json.dumps({"error": "Telegram webhook authentication not configured"})}
 
     owner_chat = os.environ.get("TELEGRAM_OWNER_CHAT_ID", "").strip()
     owner_phone = os.environ.get("OWNER_PHONE", "").strip()
@@ -126,6 +131,8 @@ def telegram_inbound_handler(event, context):
 
     upper = text.upper()
     if upper.startswith("COORD ") or upper.startswith("/COORD "):
+        if not owner_phone or from_number != owner_phone:
+            return {"statusCode": 403, "body": json.dumps({"error": "not coordinator"})}
         action, key = "inbound.coordinator", "coord"
         body = text.split(" ", 1)[1].strip() if " " in text else text
     else:
@@ -150,6 +157,5 @@ def tick_handler(event, context):
         return {"ok": True, "events": 0}
     out = []
     for e in open_events:
-        out.append(_runtime({"action": "tick", "event_id": e["id"],
-                             "age_min": 10**9, "silence_min": 20.0}, "tick"))
+        out.append(_runtime({"action": "tick", "event_id": e["id"]}, "tick"))
     return {"ok": True, "events": len(open_events), "fired": out}

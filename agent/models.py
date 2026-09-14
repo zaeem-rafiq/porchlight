@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -27,15 +29,17 @@ class TierPlan(BaseModel):
 
 
 class Triage(BaseModel):
-    status: str = Field(description="ok | needs_help | medical | unclear | unreachable | opted_out")
-    need: str = Field(default="", description="none | cooling | transport | power | wellness_check | other (ADR-002)")
-    confidence: float = 0.0
+    status: Literal["ok", "needs_help", "medical", "unclear", "unreachable", "opted_out"]
+    need: Literal["none", "cooling", "transport", "power", "wellness_check", "other"] = "none"
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0, strict=True, allow_inf_nan=False)
     reason: str = ""
     quote: str = Field(default="", description="resident's exact words that decided it (ADR-001)")
 
 
 class Dispatch(BaseModel):
     resident_name: str
+    resident_id: str = ""
+    resource_id: str = ""
     resource_name: str = ""
     volunteer_name: str = ""
     message: str = ""

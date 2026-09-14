@@ -1,8 +1,8 @@
-"""Porchlight Runtime entrypoint (P-05): one BedrockAgentCoreApp, six actions.
+"""Porchlight Runtime entrypoint (P-05): one BedrockAgentCoreApp and persisted workflow state.
 
 Actions: hazard.detected, inbound.resident, inbound.coordinator,
 inbound.volunteer, tick (retry + silence ladders), event.closed.
-The hazard session is long-running: callers pass
+Callers pass
 runtimeSessionId = "porchlight-" + event_id + suffix; Supabase stays the
 source of truth and the DB-durable gate queue survives across invocations
 (ADR-005). Secrets come from Secrets Manager porchlight/app in the cloud,
@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime, timezone
 
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
 
@@ -25,11 +26,14 @@ def get_config() -> dict[str, str]:
     global _config
     if _config:
         return _config
-    if os.environ.get("AWS_EXECUTION_ENV"):
+    secret_id = os.environ.get("PORCHLIGHT_SECRET_ID", "")
+    if not secret_id and os.environ.get("AWS_EXECUTION_ENV"):
+        secret_id = "porchlight/app"
+    if secret_id:
         import boto3
 
         sm = boto3.client("secretsmanager")
-        _config = json.loads(sm.get_secret_value(SecretId="porchlight/app")["SecretString"])
+        _config = json.loads(sm.get_secret_value(SecretId=secret_id)["SecretString"])
         for key, value in _config.items():
             os.environ.setdefault(key, value)
     else:
@@ -49,6 +53,7 @@ def _sb():
 
 @app.entrypoint
 def porchlight(payload: dict) -> dict:
+    get_config()
     action = (payload or {}).get("action", "")
     handlers = {
         "hazard.detected": on_hazard_detected,
@@ -97,69 +102,102 @@ def on_inbound_coordinator(payload: dict) -> dict:
     from agent.inbound import handle_inbound
 
     cfg = get_config()
+    sender = payload.get("from", "")
+    if not sender or sender != cfg.get("OWNER_PHONE"):
+        return {"outcome": "dropped", "reason": "not_coordinator"}
     body = payload["body"]
     if body.lower().startswith("/coord "):
         body = "COORD " + body[7:].strip()
-    elif not body.upper().startswith("COORD ") and body.strip() in ("1", "2", "3"):
+    elif not body.upper().startswith("COORD "):
         body = "COORD " + body.strip()
-    return handle_inbound(cfg["OWNER_PHONE"], "telegram", body, payload["event_id"])
+    return handle_inbound(sender, "coordinator", body, payload["event_id"])
 
 
 def on_inbound_volunteer(payload: dict) -> dict:
-    from agent.dispatch import volunteer_yes
+    from agent.dispatch import volunteer_reply
 
-    if payload.get("body", "").strip().upper() != "Y":
-        return {"outcome": "declined"}
-    return volunteer_yes(_sb(), payload["dispatch_id"], payload["event_id"])
+    return volunteer_reply(_sb(), payload["event_id"], payload.get("from", ""),
+                           payload.get("body", ""), payload.get("dispatch_id", ""))
 
 
 def on_dispatch_run(payload: dict) -> dict:
-    from agent.coordinator import CoordinatorGate, pending_open
-    from agent.dispatch import propose_dispatch
+    from agent.coordinator import maybe_ping, pending_add, pending_open
     from agent.triage import triage_reply
 
     sb = _sb()
     event_id = payload["event_id"]
-    resident = sb.table("residents").select("*").eq(
-        "id", payload["resident_id"]).execute().data[0]
+    rows = sb.table("residents").select("*").eq("id", payload["resident_id"]).execute().data
+    if not rows or rows[0].get("opted_out"):
+        return {"accepted": False, "error": "resident unavailable"}
+    resident = rows[0]
     triage, _ = triage_reply(payload.get("body", ""), resident)
-    dispatch = propose_dispatch(resident, triage, event_id)
-
-    class _GateEvent:
-        tool_name = "escalate_medical"
-        tool_input = {"resident_name": resident["name"]}
-
-        def interrupt(self, token):
-            self.token = token
-
-    ev = _GateEvent()
-    CoordinatorGate(sb, event_id).on_before_tool_call(ev)
-    return {"accepted": True, "held": ev.token == "coordinator-decision",
-            "pending": len(pending_open(sb, event_id)),
-            "dispatch": dispatch.model_dump()}
+    if triage.status not in ("medical", "needs_help"):
+        return {"accepted": False, "error": "no dispatch need"}
+    pending_add(sb, event_id, "escalate_medical" if triage.status == "medical" else "dispatch_help",
+                {"resident_id": resident["id"], "resident_name": resident["name"],
+                 "need": triage.need, "quote": triage.quote})
+    notification = maybe_ping(sb, event_id, "Assistance requested", force=True)
+    return {"accepted": True, "held": True, "gate": "durable_coordinator_approval",
+            "pending": len(pending_open(sb, event_id)), "notification": notification}
 
 
 def on_tick(payload: dict) -> dict:
-    from agent.coordinator import silence_check
-    from agent.inbound import ladder_action
+    from agent.coordinator import maybe_ping, pending_add, silence_check
+    from agent.inbound import ladder_action, RESEND_AFTER_MIN, UNREACHABLE_AFTER_MIN
+    from agent.outreach import send_one
 
     sb = _sb()
     event_id = payload["event_id"]
+    now = datetime.now(timezone.utc)
     fired: list[str] = []
     contacts = sb.table("contacts").select("*").eq("event_id", event_id).execute().data
     for c in contacts:
-        step = ladder_action({**c, "_sent_min": 0.0}, payload.get("age_min", 10**9))
+        stamp = c.get("last_inbound") if c.get("status") == "medical" else c.get("last_outbound")
+        if not stamp:
+            continue
+        try:
+            sent_at = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+            age_min = max(0.0, (now - sent_at).total_seconds() / 60)
+        except (ValueError, TypeError):
+            continue
+        step = ladder_action({**c, "_sent_min": 0.0}, age_min,
+                             unreachable_after=UNREACHABLE_AFTER_MIN - RESEND_AFTER_MIN)
         if step == "resend":
-            sb.table("contacts").update({"attempts": c["attempts"] + 1, "status": "resent"}).eq(
-                "id", c["id"]).execute()
-            fired.append(f"resend:{c['id'][:8]}")
+            residents = sb.table("residents").select("*").eq("id", c["resident_id"]).execute().data
+            if not residents or residents[0].get("opted_out"):
+                continue
+            resident = residents[0]
+            claimed = sb.table("contacts").update({"status": "retrying"}).eq("id", c["id"]).eq(
+                "status", "sent").eq("attempts", 1).execute().data
+            if not claimed:
+                continue
+            text = ("Porchlight: seguimos pendientes de ti. Responde 1 si estás bien, 2 si necesitas ayuda. STOP para salir."
+                    if resident.get("language") == "es" else
+                    "Porchlight: checking on you again. Reply 1 if OK, 2 for help. Reply STOP to opt out.")
+            try:
+                sid, channel = send_one(sb, resident["phone"], "telegram", text,
+                                       os.environ.get("OWNER_PHONE", "").strip())
+            except Exception:
+                sb.table("contacts").update({"status": "retry_failed"}).eq("id", c["id"]).eq("status", "retrying").execute()
+                raise
+            change = {"status": "retry_failed"} if channel == "failed" else {
+                "attempts": 2, "status": "resent", "last_outbound": now.isoformat()}
+            sb.table("contacts").update(change).eq("id", c["id"]).eq("status", "retrying").execute()
+            sb.table("audit_log").insert({"event_id": event_id, "actor": "retry",
+                "action": f"resend {channel}", "detail": f"{resident['name']} sid={sid}"}).execute()
+            fired.append(f"{'resend_failed' if channel == 'failed' else 'resend'}:{c['id']}")
         elif step == "flag_unreachable":
-            sb.table("contacts").update({"status": "unreachable"}).eq("id", c["id"]).execute()
-            fired.append(f"unreachable:{c['id'][:8]}")
-        sil = silence_check(sb, event_id, c, age_min=payload.get("age_min", 10**9),
-                            limit_min=payload.get("silence_min", 20.0))
+            changed = sb.table("contacts").update({"status": "unreachable"}).eq("id", c["id"]).eq(
+                "status", "resent").execute().data
+            if changed:
+                resident = sb.table("residents").select("*").eq("id", c["resident_id"]).execute().data[0]
+                pending_add(sb, event_id, "mark_unreachable_tier1", {
+                    "resident_id": resident["id"], "resident_name": resident["name"]})
+                fired.append(f"unreachable:{c['id']}")
+        sil = silence_check(sb, event_id, c, age_min=age_min)
         if sil:
-            fired.append(f"silence:{sil['resident']}")
+            fired.append(f"silence:{sil['resident']}:{sil['channel']}")
+    maybe_ping(sb, event_id, "Check-in decisions pending")
     return {"accepted": True, "fired": fired}
 
 

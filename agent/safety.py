@@ -17,12 +17,13 @@ def parse_allowlist(raw: str) -> set[str]:
 
 
 def is_allowed(phone: str, allowlist: set[str]) -> bool:
-    return normalize(phone) in allowlist
+    normalized = normalize(phone)
+    return normalized.removeprefix("+").isdigit() and normalized in allowlist
 
 
 def assert_allowed(phone: str, allowlist: set[str]) -> None:
     if not is_allowed(phone, allowlist):
-        raise PermissionError(f"Refusing send to number outside PHONE_ALLOWLIST: {phone}")
+        raise PermissionError("Refusing send to number outside PHONE_ALLOWLIST")
 
 
 def assert_roster_allowed(phones: list[str], allowlist: set[str], roster_mode: str) -> None:

@@ -1,250 +1,111 @@
 # Porchlight
 
-> Extreme-weather wellness check-in agent for neighborhood "check on" rosters powered by Strands Agents and AWS Bedrock AgentCore.
+**Turn an extreme-heat check-in roster into a coordinator's next action.**
 
-In an extreme heat wave or winter freeze, the people who die are older, alone, and on somebody's list. Mutual-aid groups, block associations, congregations, and senior centers maintain rosters of vulnerable neighbors, but a single volunteer coordinator cannot manually text dozens of residents, interpret ambiguous replies, coordinate volunteer drivers, and track escalations when disaster strikes.
+Porchlight is a hackathon prototype for neighborhood groups, senior centers, and other organizations that already know whom to check on during dangerous heat. It prioritizes a roster, requests a check-in, interprets free-text replies with Strands Agents, and holds assistance requests for a human coordinator.
 
-**Porchlight works the list**: when a National Weather Service (NWS) alert drops, Porchlight texts every vulnerable neighbor on the roster, triages natural language responses, dispatches volunteer help to cooling centers, and interrupts execution to alert the human coordinator only for decisions a human must make.
+The demonstration uses **40 synthetic residents**. In the configured Telegram sandbox, only the owner's allowlisted identity receives real messages; other roster messages are recorded as simulated. The local drill described below simulates **all** database, model, and messaging integrations. Neither mode establishes a real resident pilot or emergency-response readiness.
 
----
+## The complete loop
 
-## Architecture & System Flow
+1. An NWS alert or a labeled heat-drill fixture enters the Python runtime.
+2. Deterministic vulnerability scoring orders residents into three outreach tiers. An existing contact for the same event is preserved, so a repeated alert does not restart a completed check-in.
+3. `1` means OK and `2` means help without a model call. `STOP` and re-enrollment commands are handled in code.
+4. Free-text replies use a Strands `Agent` with structured `Triage` output: status, need, confidence, reason, and a verbatim quote. Code rejects unsupported values, invalid confidence, and invented quotes. An unavailable or invalid model response becomes `unclear` for coordinator review.
+5. Medical, help, and unclear replies enter a durable database queue. A coordinator message presents specific cases. A reply must identify the current menu and selected option before an assistance request proceeds.
+6. The coordinator can ask a volunteer or take responsibility for the case. An authenticated volunteer replies `Y <request ID>` or `N <request ID>` so the response updates the request they reviewed. Declines return the case to coordinator attention.
+7. Stored timestamps drive the retry and medical-silence ladders. The console shows contact state and the audit timeline; transport failures remain failures.
 
-Porchlight combines AWS Bedrock AgentCore serverless infrastructure with the Strands Agents framework, Telegram messaging edge, Supabase PostgreSQL with Row Level Security, and a Next.js operator dispatch console.
+The supported demonstration focuses on **extreme heat**. The repository recognizes other event types, but its outreach wording and resource choices are not validated for every hazard.
 
-![Porchlight Architecture](docs/media/architecture.png)
+## Where Strands and AWS fit
 
-```text
-[ NWS Weather API ] ──> [ AWS EventBridge (15m) ] ──> [ Lambda: NwsPoll ]
-                                                             │
-                                                             ▼
-[ Telegram Bot API ] <──> [ Lambda: TelegramInbound ] ──> [ AgentCore Runtime ]
-                                                             │
-                                   ┌─────────────────────────┴─────────────────────────┐
-                                   ▼                                                   ▼
-                       [ Strands: ResidentAgents ]                            [ Strands: CoordinatorGate ]
-                     (Agents-as-Tools per resident)                         (BeforeToolCallEvent Hook)
-                                   │                                                   │
-                                   ▼                                                   ▼
-                         [ Structured Triage ]                                 [ gate_pending Queue ]
-                                   │                                                   │
-                                   └─────────────────────────┬─────────────────────────┘
-                                                             │
-                                                             ▼
-                                                [ Supabase PostgreSQL + RLS ]
-                                                             │
-                                                             ▼
-                                              [ Next.js Console Dispatch Board ]
-                                                    (AWS App Runner / ECR)
-```
+| Component | Current role |
+| --- | --- |
+| Strands Agents and `BedrockModel` | Classify an individual free-text reply into the validated triage schema. A live Sonnet 4.5 call was verified on one fictional reply; model selection comes from `BEDROCK_MODEL_ID`. |
+| Amazon Bedrock AgentCore Runtime | Hosts the Python entrypoint and its action handlers when deployed. Current deployment verification is tracked separately below. |
+| Lambda and EventBridge | Provide webhook, weather-poll, and timer adapters. Configuration is not evidence that a schedule or deployment has run successfully. |
+| Supabase PostgreSQL | Stores contacts, coordinator decisions, dispatches, escalations, and audit events. Conditional state changes and uniqueness constraints limit duplicate actions. |
+| Telegram | Carries messages to the explicitly configured owner chat in the synthetic sandbox. |
+| Next.js console | Displays roster state and provides access-key-protected drill controls. A local console is reproducible; no publicly hosted console is claimed here. |
 
-### End-to-End Operational Lifecycle
+The production coordinator gate is **ordinary deterministic code backed by persisted records**. It does not depend on a Strands interrupt/resume demonstration. A parallel-triage helper, optional hook, and memory-related files remain in the repository, but the demonstrated workflow does not establish 40 concurrent agents, persistent AgentCore Memory use, or Google Calendar completion.
 
-1. **Hazard Detection**: AWS EventBridge invokes the `NwsPoll` Lambda every 15 minutes to poll `api.weather.gov`. When a warning activates for the configured zone, it triggers the AgentCore Runtime with `hazard.detected`.
-2. **Outreach Wave**: Porchlight loads the resident roster from Supabase, prioritizes by vulnerability score (Tiers 1–3), and dispatches personalized, bilingual check-in messages via Telegram.
-3. **Inbound Resident Triage**: Incoming messages route through `TelegramInbound` into isolated `ResidentAgent` instances (one per resident). Clear check-ins (`"1"`) short-circuit instantly, while conversational or distress replies are analyzed using Claude 3.5 Sonnet on Bedrock into a structured `Triage` record (`status`, `need`, `quote`, `reason`).
-4. **Coordinator Human Gate**: When a reply indicates medical urgency or power disruption, Strands `BeforeToolCallEvent` hook interrupts the automated tool call, saves the action to `gate_pending`, and alerts the coordinator via Telegram with a consolidated summary and numbered options.
-5. **Volunteer Dispatch & Scheduling**: When the coordinator approves an option (`"1"`), the Strands Dispatcher matches the nearest open cooling center, queries verified volunteers, sends an ask to volunteer Marcus Webb, and logs the accepted dispatch with Google Calendar integration.
-6. **Live Visibility**: The Next.js 16 dispatch board renders active hazard banners, tier counts, 40-resident status stamps, conversation views, and audit timeline updates under anonymous read-only PostgREST RLS.
+## Evidence and limits
 
----
+See [September 14 verification](docs/deadline-verification.md) for exact commands, observations, omissions, and deployment state. The most useful current checks exercise the actual handlers through distressed reply, coordinator choice, volunteer response, repeated requests, and failure cases with explicitly substituted external adapters.
 
-## Safety & Ethics Architecture
+At 22:54 UTC on September 14, the current `triage_reply` function made a real Strands/Bedrock call using `us.anthropic.claude-sonnet-4-5-20250929-v1:0`. The fictional reply `AC broke, dizzy` returned `medical` / `cooling` with the exact quote and `used_model_call=true`. [Sanitized result](docs/evidence/deadline-real-triage.json). This verifies one model integration call; it is not an accuracy benchmark or proof of the deployed runtime.
 
-Porchlight is engineered with defense-in-depth safety guardrails designed for real-world vulnerable populations:
+Historical [September 7 evaluations](evals/results/2026-09-07-run7.md) recorded 27/30 status matches, 26/30 need matches, and 30/30 quote matches on a fixed synthetic reply set. These are **historical results from an earlier implementation**, not scores for the current stricter validation or current model configuration. [Historical failure notes](docs/evals.md) are retained unchanged. The runner's exit code alone does not establish that its score thresholds passed.
 
-- **Strict `PHONE_ALLOWLIST` Enforcement**: In synthetic mode (`ROSTER_MODE=synthetic`), every resident, volunteer, and emergency contact number is asserted against `PHONE_ALLOWLIST` before any SMS or Telegram message is sent. Any non-allowlisted number instantly aborts execution with zero outbound sends.
-- **Never-911 Policy**: No tool or capability to call emergency services (911) exists anywhere in the codebase. Medical escalations terminate at the designated family or neighbor emergency contact with clear advisory copy (*"please check on them; if you can't reach them, call 911"*).
-- **Mandatory Opt-Out Compliance**: The initial check-in message to every resident carries explicit opt-out instructions (*"Reply STOP to opt out"*). Inbound keywords `STOP`, `UNSTOP`, and `HELP` are handled deterministically at the edge, immediately updating resident status and suppressing further outreach.
-- **Consent & Data Model**: Porchlight operates exclusively on pre-enrolled community rosters where residents have registered with their coordinator. The schema stores minimal necessary PII (first name, phone, age band, mobility tier, emergency contact), enforces an explicit opt-in/opt-out lifecycle, and isolates anonymous database access behind PostgREST Row Level Security (RLS) with all mutations restricted to server-side credentials.
-- **Synthetic Roster Model**: The default roster consists of 40 synthetic residents reflecting realistic demographic diversity across languages (English and Spanish), age brackets (65+ to 85+), mobility limitations, and power-dependent medical devices.
-- **Liability-Grade Audit Trail**: Every inbound response, model triage classification, gate interruption, coordinator decision, and dispatch confirmation is immutably written to Supabase `audit_log` with millisecond UTC timestamps.
+Known boundaries:
 
----
+- No real resident pilot, measured response-time improvement, or validated clinical triage is claimed.
+- A matching quote proves containment in the reply; it does not prove the model's interpretation is correct.
+- Resource selection uses configured records. Opening hours, transport availability, and the actual visit require human confirmation.
+- The application does not call emergency services. Its silence message asks the designated contact to check on the resident and seek emergency help if needed.
+- Failed or ambiguous delivery reservations require operator recovery. They are not automatically replayed as if delivery were known to have failed.
+- Database audit records are operational history, not a certified immutable or complete evidence log. Anonymous board access is for the synthetic demonstration; real personal data needs a separate access and privacy design.
 
-## Strands Framework Integration
+## Reproduce the local synthetic drill
 
-Porchlight leverages the full capability spectrum of the Strands Agents framework:
-
-| Strands Feature | Implementation in Porchlight | File Reference |
-| --- | --- | --- |
-| **Agents-as-Tools** | One `ResidentAgent` per resident executed concurrently with `asyncio.gather` for parallel multi-resident triage. | `agent/inbound.py` |
-| **Structured Output** | Strict Pydantic models (`Triage`, `Dispatch`) enforce deterministic classification schemas and prevent hallucinated fields. | `agent/models.py`, `agent/triage.py` |
-| **Hooks & Interrupts** | `CoordinatorGate` implements `HookProvider` listening on `BeforeToolCallEvent` to hold `escalate_medical` and interrupt execution with `"coordinator-decision"`. | `agent/coordinator.py` |
-| **Session Managers** | Long-running hazard session management passing `runtimeSessionId="porchlight-{event_id}-{suffix}"` across invocations. | `agent/app.py`, `lambda/handlers.py` |
-| **AgentCore Memory** | Episodic memory integration across hazard days for resident cooling preferences and organization protocol rules. | `agent/app.py`, `agentcore/agentcore.json` |
-| **Bedrock Models** | Native `BedrockModel` abstraction connecting Claude 3.5 Sonnet / 4.5 via inference profiles with temperature zero. | `agent/triage.py`, `agent/dispatch.py` |
-
----
-
-## AWS Bedrock AgentCore Services
-
-| AgentCore Service | Architecture Role | Configuration / Deployment |
-| --- | --- | --- |
-| **AgentCore Runtime** | Long-running microVM environment executing the core `BedrockAgentCoreApp` with entrypoint `agent/app.py`. | `agentcore/agentcore.json` (`porchlight` runtime, `CodeZip`) |
-| **AgentCore Memory** | Episodic memory retention across hazard days for resident cooling preferences and organization protocol rules. | Resource `porchlight-Jg1L1m9fd7` (`bedrock-agentcore-control`) |
-| **AWS Lambda Glue** | Three lightweight serverless shims: `NwsPoll`, `TelegramInbound` (with Function URL), and `Tick` (retry ladders). | `sam/template.yaml`, `lambda/handlers.py` |
-| **AWS Secrets Manager** | Centralized production secret store containing Supabase keys, Telegram tokens, and console credentials. | Secret `porchlight/app` |
-| **Amazon ECR** | Container registry hosting multi-stage Alpine Docker image for the Next.js standalone dispatch console. | ECR Repository `porchlight-console` |
-| **AWS App Runner** | Managed container hosting service exposing public HTTPS endpoint for the operator console. | Service `porchlight-console` |
-| **Amazon EventBridge** | Serverless scheduler driving the 15-minute weather poller and retry/silence check cron schedules. | Schedules `NwsPollSchedule`, `TickSchedule` |
-
----
-
-## Triage Benchmark Evals
-
-Porchlight's triage intelligence is validated against a benchmark of 30 adversarial real-world replies (`evals/replies/cases.json`), including figurative speech (*"I'm dying for some ice cream"*), understated distress (*"Mom hasn't gotten up today"*), Spanish idioms, typos, and STOP/HELP commands.
-
-### Results Benchmark
-
-| Metric | Target Threshold | Run 7 Result | Status |
-| --- | --- | --- | --- |
-| **Status Classification** | >= 27 / 30 (90%) | **27 / 30** | **PASS** |
-| **Need Identification** | >= 26 / 30 (87%) | **26 / 30** | **PASS** |
-| **Quote Grounding** | = 30 / 30 (100%) | **30 / 30** | **PASS** |
-| **Deterministic Judge Pass** | >= 27 / 30 (90%) | **29 / 30** | **PASS** |
-
-Full run progression and failure mode analysis are documented in `docs/evals.md` and `evals/results/`.
-
----
-
-## Quickstart & Local Verification
-
-### Prerequisites
-
-- Python 3.12+ (tested on Python 3.12 and 3.13)
-- Node.js 20+ and npm
-- Supabase account with PostgreSQL schema `porchlight`
-- Telegram account and bot token via `@BotFather`
-
-### 1. Installation
-
-Clone the repository and install dependencies:
+Requires Python 3.12 and Node.js 22 with npm. From a fresh checkout:
 
 ```bash
-git clone https://github.com/your-org/porchlight.git
+git clone https://github.com/zaeem-rafiq/porchlight.git
 cd porchlight
-
-# Set up Python virtual environment
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-
-# Install Console dependencies
-cd console
-npm install
-cd ..
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+npm ci --prefix console
 ```
 
-### 2. Environment Configuration
-
-Copy the example environment file and configure your credentials:
+In one terminal:
 
 ```bash
-cp .env.example .env
+.venv/bin/python scripts/local_drill.py
 ```
 
-Ensure the following variables are defined in `.env`:
-
-```ini
-BEDROCK_MODEL_ID=us.anthropic.claude-3-5-sonnet-20241022-v2:0
-AWS_REGION=us-east-1
-SUPABASE_URL=https://<your-project>.supabase.co
-SUPABASE_SERVICE_KEY=<your-service-role-key>
-SUPABASE_ANON_KEY=<your-anon-key>
-TELEGRAM_BOT_TOKEN=<your-telegram-bot-token>
-TELEGRAM_OWNER_CHAT_ID=<your-telegram-chat-id>
-OWNER_PHONE=+1555010001
-PHONE_ALLOWLIST=+1555010001,+1555010000,...,+1555010999
-ROSTER_MODE=synthetic
-DEMO_ZONE=ARZ001
-CONSOLE_KEY=porchlight-console-demo-key
-```
-
-### 3. Database Reset & Health Probe
-
-Run the idempotent reset script to close active events, purge stale records, reseed 40 synthetic residents, and verify health across all subsystems:
-
-```bash
-python scripts/reset_demo.py
-```
-
-Expected output:
-
-```text
-PROOF P-08: reset_demo ok runtime=READY lambdas=3/3 console=200 telegram=ok = PASS
-```
-
-### 4. Run Automated Dress Rehearsal
-
-Execute the end-to-end dress rehearsal verifying alert injection, wave dispatch, resident reply triage, coordinator human gate, and volunteer dispatch:
-
-```bash
-python scripts/rehearsal_p08.py
-```
-
-Expected output:
-
-```text
-PROOF P-08: rehearsal — Ruth text received; "1" → ok; Alvarez medical → coordinator text received; reply 1 → volunteer Y → dispatch + calendar; timestamps printed; zero sends outside the allowlist = PASS
-```
-
-### 5. Launch the Operator Dispatch Board
-
-Build and run the Next.js standalone console:
+In a second terminal, start the console with the local adapter explicitly selected:
 
 ```bash
 cd console
-npm run build
-node .next/standalone/server.js
+LOCAL_DRILL=1 \
+NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:8765 \
+NEXT_PUBLIC_SUPABASE_ANON_KEY=local-drill \
+SUPABASE_URL=http://127.0.0.1:8765 \
+SUPABASE_ANON_KEY=local-drill \
+FUNCTION_URL=http://127.0.0.1:8765 \
+CONSOLE_KEY=local-drill \
+npm run dev
 ```
 
-Open `http://localhost:3000` to view the live dispatch board, active hazard banner, tier badges, resident conversations, and interactive simulation panel.
+Open [the local console](http://127.0.0.1:3000) and [captured messages](http://127.0.0.1:8765/drill/outbox). Enter `local-drill` as the access key; it is a public local fixture, not a production credential.
 
-### 6. Run the Test Suite
+1. Inject the heat fixture.
+2. Select a synthetic resident and submit `I feel dizzy`.
+3. Read the captured coordinator menu and use its menu code and option in the console.
+4. Copy the resulting request's ID into **Volunteer request ID**, then choose **Volunteer Y**; inspect the dispatch and audit state. On Telegram, the equivalent reply is `Y <request ID>`; a bare `Y` or `N` is rejected.
 
-Run the full offline unit and regression test suite:
+The local fixture recognizes the demonstration distress phrases. It does not call Bedrock. The bridge keeps its database in memory, captures outbound messages, and blocks external socket connections. Restarting it resets the drill. The console makes loopback requests to this bridge.
 
-```bash
-pytest
-```
+## Tests and operational setup
 
-All 141 tests pass with zero external messaging dependencies.
-
----
-
-## Deployment Guide
-
-### Deploy Lambda Glue with AWS SAM
-
-Deploy the three serverless Lambda functions and EventBridge schedules:
+Run focused checks without provider credentials:
 
 ```bash
-cd sam
-sam build
-sam deploy --guided
-```
-
-### Deploy Console to AWS App Runner
-
-Build the container image and deploy to AWS App Runner via Amazon ECR:
-
-```bash
-# Authenticate Docker to Amazon ECR
-aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin <account-id>.dkr.ecr.us-east-1.amazonaws.com
-
-# Build and push container image
+.venv/bin/python -m pytest -q tests/test_boundary_recovery.py tests/test_workflow_recovery.py tests/test_local_drill.py
 cd console
-docker build -t porchlight-console:latest .
-docker tag porchlight-console:latest <account-id>.dkr.ecr.us-east-1.amazonaws.com/porchlight-console:latest
-docker push <account-id>.dkr.ecr.us-east-1.amazonaws.com/porchlight-console:latest
-
-# Deploy or update App Runner service
-python scripts/deploy_apprunner.py --check-aws
+npx tsc --noEmit
+npm run build -- --webpack
 ```
 
----
+Commands are reproduction instructions; recorded results and any excluded checks belong in the [verification note](docs/deadline-verification.md).
+
+Real integrations require a separate, explicitly configured sandbox: an AWS runtime and Bedrock model, a Supabase schema with the applicable migrations, a Telegram bot and owner chat, and an explicit `PHONE_ALLOWLIST`. `CONSOLE_KEY` and `FUNCTION_URL` must be configured; the console will not borrow a server key for an unauthenticated caller or fall back to a hard-coded cloud endpoint. Never put those credentials in the repository or public demonstration.
+
+`reset_demo.py` changes the configured database. It is not a read-only health check or a prerequisite for the isolated local drill. Inspect deployment and reset scripts, select the intended environment, and verify their actual output before using them. Additive migration `006_dispatch_escalation_uniqueness.sql` aborts on conflicting records rather than deleting them.
 
 ## License
 
-This project is licensed under the terms of the [MIT License](LICENSE).
+[MIT](LICENSE).

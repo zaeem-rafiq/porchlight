@@ -1,0 +1,21 @@
+{
+  "observed_at_utc": "2026-09-14T22:54Z",
+  "scope": "One fictional reply through the current local triage_reply function using a real Amazon Bedrock model via Strands.",
+  "limitations": [
+    "Not a fixed evaluation or accuracy score.",
+    "Not proof that the updated AgentCore runtime has been deployed.",
+    "No Telegram delivery, resident pilot, or clinical outcome was tested."
+  ],
+  "input": "AC broke, dizzy",
+  "synthetic": true,
+  "provider": "Amazon Bedrock via Strands",
+  "model": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+  "used_model_call": true,
+  "result": {
+    "status": "medical",
+    "need": "cooling",
+    "confidence": 0.95,
+    "reason": "AC broke, dizzy",
+    "quote": "AC broke, dizzy"
+  }
+}

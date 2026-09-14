@@ -25,6 +25,7 @@ from typing import Any
 import httpx
 import pytest
 from dotenv import load_dotenv
+from test_workflow_recovery import OTHER, console, message, menu_token, request_id, system
 
 # Ensure repo root is on sys.path
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -474,52 +475,18 @@ class TestTier3CrossFeatureInteractions:
         t_elapsed = time.time() - t_start
         assert t_elapsed < 90.0, f"Hazard state propagation took {t_elapsed:.2f}s, exceeding 90s SLA"
 
-    def test_resident_dizzy_reply_to_medical_triage_and_coordinator_alert(self):
-        """Cross-Feature: Resident 'dizzy' reply triggers medical triage and coordinator alert."""
-        from agent import coordinator as coord
-        from agent.models import Triage
-
-        # Simulated triage result for "I feel dizzy"
-        triage_result = Triage(
-            status="medical",
-            need="cooling",
-            confidence=0.95,
-            reason="resident reports dizziness in extreme heat",
-            quote="I feel dizzy",
-        )
-        assert triage_result.status == "medical"
-
-        # Verify Coordinator Gate intercepts medical escalation
-        class _Ev:
-            def __init__(self, name):
-                self.tool_name = name
-                self.tool_input = {"resident_name": "Mabel Thornton"}
-                self.interrupted = None
-
-            def interrupt(self, token):
-                self.interrupted = token
-
-        class _StubSB:
-            def table(self, name): return self
-            def select(self, *a): return self
-            def eq(self, *a): return self
-            def insert(self, row): return self
-            def order(self, *a, **k): return self
-            def execute(self): return self
-            @property
-            def data(self):
-                return [{"status": "medical", "residents": {"name": "Mabel Thornton"}}]
-
-        gate = coord.CoordinatorGate(_StubSB(), "event-001")
-        ev = _Ev("escalate_medical")
-        gate.on_before_tool_call(ev)
-        assert ev.interrupted == "coordinator-decision", "Gate must interrupt medical escalation"
-
-        # Verify ping composition for coordinator Telegram notification
-        ping_text = coord.compose_ping(_StubSB(), "event-001", "Elm St heat warning")
-        assert ping_text.startswith("[Coordinator]")
-        assert "Mabel" in ping_text
-        assert "Reply" in ping_text
+    def test_resident_dizzy_reply_to_medical_triage_and_coordinator_alert(self, system):
+        """Model-boundary triage queues the resident and sends the actual decision menu."""
+        db, sends = system
+        result = console("resident", **{"from": OTHER, "text": "I feel dizzy"})
+        assert result["status"] == "medical"
+        queue = db.rows["gate_pending"]
+        assert len(queue) == 1 and queue[0]["tool"] == "escalate_medical"
+        data = json.loads(queue[0]["input"])
+        assert data["resident_id"] == "r2" and data["quote"] == "I feel dizzy"
+        assert sends[0][1].startswith("[Coordinator]")
+        assert "Ruth Alvarez" in sends[0][1] and f"COORD {menu_token(db)} 1" in sends[0][1]
+        assert not db.rows.get("dispatches")
 
 
 # ==============================================================================
@@ -529,7 +496,7 @@ class TestTier3CrossFeatureInteractions:
 class TestTier4RealWorldScenarios:
     """Validates complete real-world operational drills from alert to resolution."""
 
-    def test_heat_wave_drill_end_to_end(self, existing_event_id: str):
+    def test_heat_wave_drill_end_to_end(self, existing_event_id: str, system):
         """Scenario: End-to-end heat wave drill lifecycle."""
         from agent import coordinator as coord
         from agent.safety import assert_allowed, parse_allowlist
@@ -562,23 +529,17 @@ class TestTier4RealWorldScenarios:
         contact_resent = {"status": "resent", "attempts": 2, "_sent_min": 0}
         assert ladder_action(contact_resent, 2.0, resend_after=1, unreachable_after=2) == "flag_unreachable"
 
-        # Step 4: Coordinator Decision Gate
-        class _StubSB:
-            def table(self, name): return self
-            def select(self, *a): return self
-            def eq(self, *a): return self
-            def order(self, *a, **k): return self
-            def insert(self, row): return self
-            def update(self, row): return self
-            def delete(self): return self
-            def execute(self): return self
-            @property
-            def data(self):
-                return [{"id": "g1", "tool": "escalate_medical", "input": "{}"}]
-
-        decision = coord.handle_coordinator_reply(_StubSB(), existing_event_id, "1")
+        # Step 4: Actual sent menu -> coordinator approval -> volunteer acceptance.
+        db, sends = system
+        console("resident", **{"from": OTHER, "text": "I feel dizzy"})
+        _, decision = message("COORD 1", token=menu_token(db))
         assert decision.get("outcome") == "approved"
-        assert decision.get("decision", {}).get("tool") == "escalate_medical"
+        assert decision["decision"]["tool"] == "escalate_medical"
+        assert db.rows["dispatches"][0]["status"] == "proposed"
+        _, acceptance = message(f"Y {request_id(db)}")
+        assert acceptance["outcome"] == "accepted"
+        assert db.rows["dispatches"][0]["status"] == "accepted"
+        assert len(sends) == 2
 
         # Step 5: Safety Invariants
         allowlist = parse_allowlist("+15550001111")

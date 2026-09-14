@@ -6,8 +6,8 @@ Performs:
 2. Reseeds the roster idempotently (40 synthetic residents, 5 volunteers,
    3 resources, protocol v1) with strict PHONE_ALLOWLIST assertions.
 3. Probes health:
-   - AgentCore Runtime status (READY)
-   - Lambda URLs / handlers (3/3)
+   - AgentCore Runtime provider state (READY; invocation not tested)
+   - All three deployed Lambda provider states (invocation not tested)
    - Console endpoint (HTTP 200)
    - Telegram Bot API (getMe ok)
 4. Emits proof line:
@@ -41,7 +41,6 @@ from agent.safety import parse_allowlist
 from scripts.deploy_apprunner import get_anon_key
 from scripts.seed import build_rows
 
-FUNCTION_URL = "https://qrqpu64krttrdqmumjl7dpv2du0dxrkk.lambda-url.us-east-1.on.aws/"
 DEFAULT_CONSOLE_URL = "http://127.0.0.1:3000"
 
 
@@ -57,6 +56,25 @@ def get_sb_client():
 
 def reset_database(sb) -> dict[str, int]:
     """Closes open hazard events, archives old records, and reseeds roster idempotently."""
+    # Validate the entire roster before any database mutation.
+    owner = os.environ.get("OWNER_PHONE", "").strip()
+    allowlist = parse_allowlist(os.environ.get("PHONE_ALLOWLIST", ""))
+    if not owner or not allowlist:
+        raise RuntimeError("Missing OWNER_PHONE or PHONE_ALLOWLIST in environment")
+
+    rows = build_rows(owner)
+    all_phones = (
+        [r["phone"] for r in rows["residents"]]
+        + [r["emergency_contact"] for r in rows["residents"]]
+        + [v["phone"] for v in rows["volunteers"]]
+    )
+    outside = [p for p in all_phones if p not in allowlist]
+    if outside:
+        raise RuntimeError(f"ABORTED: {len(outside)} phones outside PHONE_ALLOWLIST, zero writes performed")
+
+    print(f"    [PASS] PHONE_ALLOWLIST verified: {len(rows['residents'])} residents, "
+          f"{len(rows['volunteers'])} volunteers allowlisted.")
+
     print("[*] Step 1: Closing open hazard events and archiving dynamic records...")
     # 1. Close open hazard events
     try:
@@ -78,25 +96,6 @@ def reset_database(sb) -> dict[str, int]:
             sb.table(table).delete().neq("id", "00000000-0000-0000-0000-000000000000").execute()
         except Exception as exc:
             print(f"    Notice clearing {table}: {exc}")
-
-    # 3. Allowlist assertion before reseed
-    owner = os.environ.get("OWNER_PHONE", "").strip()
-    allowlist = parse_allowlist(os.environ.get("PHONE_ALLOWLIST", ""))
-    if not owner or not allowlist:
-        raise RuntimeError("Missing OWNER_PHONE or PHONE_ALLOWLIST in environment")
-
-    rows = build_rows(owner)
-    all_phones = (
-        [r["phone"] for r in rows["residents"]]
-        + [r["emergency_contact"] for r in rows["residents"]]
-        + [v["phone"] for v in rows["volunteers"]]
-    )
-    outside = [p for p in all_phones if p not in allowlist]
-    if outside:
-        raise RuntimeError(f"ABORTED: {len(outside)} phones outside PHONE_ALLOWLIST, zero writes performed")
-
-    print(f"    [PASS] PHONE_ALLOWLIST verified: {len(rows['residents'])} residents, "
-          f"{len(rows['volunteers'])} volunteers allowlisted.")
 
     # 4. Clear static roster tables
     for table in ("residents", "volunteers", "resources", "protocol"):
@@ -120,64 +119,78 @@ def reset_database(sb) -> dict[str, int]:
     return counts
 
 
+def configuration_diagnostics() -> dict[str, bool]:
+    """Local files describe configuration; they do not establish live health."""
+    checks = {"runtime_config": False, "sam_template": False}
+    try:
+        with open(os.path.join(REPO_ROOT, "agentcore", "agentcore.json"), encoding="utf-8") as fh:
+            cfg = json.load(fh)
+        checks["runtime_config"] = any(r.get("name") == "porchlight" for r in cfg.get("runtimes", []))
+    except (OSError, ValueError):
+        pass
+    checks["sam_template"] = os.path.isfile(os.path.join(REPO_ROOT, "sam", "template.yaml"))
+    print(f"[CONFIG ONLY] {checks}; deployment and execution are not verified by these files")
+    return checks
+
+
 def probe_runtime() -> str:
-    """Probes AgentCore Runtime status."""
-    print("[*] Step 2a: Probing AgentCore Runtime status...")
+    """Return only the runtime state actually reported by AWS."""
+    print("[*] Step 2a: Reading AgentCore Runtime provider state...")
     region = os.environ.get("AWS_REGION", "us-east-1")
+    expected_arn = os.environ.get("RUNTIME_ARN", "").strip()
     try:
         import boto3
-        c = boto3.client("bedrock-agentcore-control", region_name=region)
-        runtimes = c.list_agent_runtimes(maxResults=5).get("agentRuntimeSummaries", [])
-        for r in runtimes:
-            if "porchlight" in r.get("agentRuntimeName", "").lower() or "porchlight" in r.get("agentRuntimeId", "").lower():
-                status = r.get("status", "READY").upper()
-                print(f"    [PASS] AgentCore Runtime online: {r.get('agentRuntimeName')} ({status})")
-                return status
+        client = boto3.client("bedrock-agentcore-control", region_name=region)
+        request = {"maxResults": 100}
+        while True:
+            page = client.list_agent_runtimes(**request)
+            for runtime in page.get("agentRuntimes", []):
+                matches = runtime.get("agentRuntimeArn") == expected_arn if expected_arn else runtime.get("agentRuntimeName") == "porchlight"
+                if matches:
+                    status = runtime.get("status") or "UNKNOWN"
+                    label = "PASS" if status == "READY" else "NOT READY"
+                    print(f"    [{label}] AgentCore Runtime provider state: {status}; invocation not tested")
+                    return status
+            token = page.get("nextToken")
+            if not token:
+                print("    [UNVERIFIED] Porchlight runtime was not found")
+                return "NOT_FOUND"
+            request["nextToken"] = token
     except Exception as exc:
-        print(f"    Note: AgentCore live query ({exc}); inspecting verified deployment config...")
-
-    # Validate agentcore.json runtime definition and application entrypoint
-    agentcore_cfg = os.path.join(REPO_ROOT, "agentcore", "agentcore.json")
-    if os.path.exists(agentcore_cfg):
-        with open(agentcore_cfg, "r", encoding="utf-8") as fh:
-            cfg = json.load(fh)
-        rts = cfg.get("runtimes", [])
-        if rts and rts[0].get("name") == "porchlight":
-            from agent.app import app
-            assert app is not None, "BedrockAgentCoreApp entrypoint must be valid"
-            print(f"    [PASS] AgentCore Runtime configuration verified: porchlight (READY)")
-            return "READY"
-
-    return "READY"
+        # Provider exceptions can include request details; print only the type.
+        print(f"    [UNVERIFIED] AgentCore provider query failed: {type(exc).__name__}")
+        return "UNVERIFIED"
 
 
 def probe_lambdas() -> str:
-    """Probes the 3 SAM Lambda handlers and live Function URL."""
-    print("[*] Step 2b: Probing AWS Lambdas (3/3) & Function URL...")
-    # 1. Probe live Function URL
-    furl_live = False
+    """Count the three deployed SAM functions only when AWS reports them healthy."""
+    print("[*] Step 2b: Reading Lambda provider states (execution not tested)...")
+    region = os.environ.get("AWS_REGION", "us-east-1")
+    stack = os.environ.get("SAM_STACK_NAME", "porchlight-glue")
+    expected = {"NwsPoll", "TwilioInbound", "Tick"}  # Logical IDs in sam/template.yaml.
+    healthy = set()
     try:
-        with httpx.Client(timeout=10.0) as client:
-            resp = client.get(FUNCTION_URL)
-            # 403 with {"error": "bad signature"} or 200 proves Lambda executed
-            if resp.status_code in (200, 400, 403):
-                furl_live = True
-                print(f"    [PASS] Lambda Function URL live: {FUNCTION_URL} (HTTP {resp.status_code})")
+        import boto3
+        cf = boto3.client("cloudformation", region_name=region)
+        lambdas = boto3.client("lambda", region_name=region)
+        for page in cf.get_paginator("list_stack_resources").paginate(StackName=stack):
+            for resource in page.get("StackResourceSummaries", []):
+                name = resource.get("LogicalResourceId")
+                if name not in expected or resource.get("ResourceType") != "AWS::Lambda::Function":
+                    continue
+                config = lambdas.get_function_configuration(FunctionName=resource["PhysicalResourceId"])
+                state = config.get("State", "UNKNOWN")
+                update = config.get("LastUpdateStatus", "UNKNOWN")
+                if state == "Active" and update == "Successful":
+                    healthy.add(name)
+                print(f"    [PROVIDER] {name}: state={state}, last_update={update}")
+        result = f"{len(healthy)}/3"
+        label = "PASS" if healthy == expected else "UNVERIFIED"
+        print(f"    [{label}] Lambda provider states healthy: {result}; invocation not tested")
+        return result
     except Exception as exc:
-        print(f"    Note on Function URL: {exc}")
-
-    # 2. Verify all 3 Lambda handlers in lambda/handlers.py
-    import importlib
-    handlers = importlib.import_module("lambda.handlers")
-    assert hasattr(handlers, "nws_poll_handler"), "Missing nws_poll_handler"
-    assert hasattr(handlers, "telegram_inbound_handler"), "Missing telegram_inbound_handler"
-    assert hasattr(handlers, "tick_handler"), "Missing tick_handler"
-
-    sam_template = os.path.join(REPO_ROOT, "sam", "template.yaml")
-    assert os.path.exists(sam_template), "Missing sam/template.yaml"
-
-    print("    [PASS] 3/3 Lambdas verified: NwsPoll, TelegramInbound, Tick")
-    return "3/3"
+        print(f"    [UNVERIFIED] Lambda provider query failed: {type(exc).__name__}")
+        return "UNVERIFIED"
 
 
 def probe_console(start_if_needed: bool = True) -> tuple[int, subprocess.Popen | None]:
@@ -187,16 +200,16 @@ def probe_console(start_if_needed: bool = True) -> tuple[int, subprocess.Popen |
     target_url = target_url.rstrip("/")
 
     # Check if target URL is already responding
-    for probe_target in [target_url, DEFAULT_CONSOLE_URL]:
-        try:
-            r = httpx.get(f"{probe_target}/", timeout=3.0)
-            if r.status_code == 200 and "Porchlight" in r.text:
-                print(f"    [PASS] Console endpoint responding on {probe_target} (HTTP 200 OK)")
-                return 200, None
-        except Exception:
-            pass
+    try:
+        r = httpx.get(f"{target_url}/", timeout=3.0)
+        if r.status_code == 200 and "Porchlight" in r.text:
+            print(f"    [PASS] Console endpoint responding on {target_url} (HTTP 200 OK)")
+            return 200, None
+    except Exception:
+        pass
 
-    if not start_if_needed:
+    if not start_if_needed or target_url != DEFAULT_CONSOLE_URL:
+        print("    [UNVERIFIED] Requested console endpoint did not return Porchlight HTTP 200")
         return 0, None
 
     # Start standalone server locally
@@ -269,10 +282,13 @@ def main() -> int:
         sb = get_sb_client()
         counts = reset_database(sb)
 
+        configuration_diagnostics()
         runtime_status = probe_runtime()
         lambdas_status = probe_lambdas()
         console_code, console_proc = probe_console(start_if_needed=True)
         telegram_status = probe_telegram()
+        if (runtime_status, lambdas_status, console_code, telegram_status) != ("READY", "3/3", 200, "ok"):
+            raise RuntimeError("Live health evidence is incomplete; no PASS proof emitted")
 
         proof_line = (
             f"PROOF P-08: reset_demo ok runtime={runtime_status} lambdas={lambdas_status} "

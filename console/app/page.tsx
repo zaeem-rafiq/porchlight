@@ -7,22 +7,43 @@ export const dynamic = "force-dynamic";
 
 export default async function Home() {
   const sb = boardClient();
-  const { data: events } = await sb.from("hazard_events").select("*").eq("status", "open").limit(1);
+  const { data: events, error: eventError } = await sb.from("hazard_events").select("*").eq("status", "open").limit(1);
   const event = (events ?? [])[0] ?? null;
-  const { data: residents } = await sb.from("residents").select("*").order("name");
-  const { data: contacts } = event
+  const { data: residents, error: rosterError } = await sb.from("residents").select("*").order("name");
+  const { data: contacts, error: contactError } = event
     ? await sb.from("contacts").select("*").eq("event_id", event.id)
-    : { data: [] };
+    : { data: [], error: null };
   const { data: audit } = event
     ? await sb.from("audit_log").select("*").eq("event_id", event.id).order("created_at", { ascending: false }).limit(20)
     : { data: [] };
+  const { data: dispatches, error: dispatchError } = event
+    ? await sb.from("dispatches").select("*").eq("event_id", event.id)
+    : { data: [], error: null };
+  const { data: decisions, error: decisionError } = event
+    ? await sb.from("gate_pending").select("*").eq("event_id", event.id)
+    : { data: [], error: null };
   const byResident = new Map((contacts ?? []).map((c) => [c.resident_id, c]));
   const tiers = [1, 2, 3].map((t) => (contacts ?? []).filter((c) => c.tier === t).length);
+  const { data: menus } = event
+    ? await sb.from("audit_log").select("*").eq("event_id", event.id).eq("action", "coordinator_ping").order("created_at", { ascending: false }).limit(1)
+    : { data: [] };
+  const latestMenu = menus?.[0];
+  let menuText = String(latestMenu?.detail ?? "");
+  try { menuText = JSON.parse(menuText).text ?? menuText; } catch { /* Historical plain text remains readable. */ }
 
   return (
     <main className="mx-auto max-w-6xl space-y-6 p-6">
+      {process.env.LOCAL_DRILL === "1" && (
+        <aside className="rounded-xl bg-slate-900 px-5 py-3 text-sm text-white">
+          <strong>Local synthetic drill.</strong> Model and Telegram adapters are simulated. No messages leave this computer.
+          <a className="ml-2 underline" href="http://127.0.0.1:8765/drill/outbox" target="_blank" rel="noreferrer">View captured messages</a>
+        </aside>
+      )}
+      {(eventError || rosterError || contactError || dispatchError || decisionError) && (
+        <p role="alert" className="rounded-xl border border-red-300 bg-red-50 p-4 text-red-900">Some board data could not be loaded. Do not treat this view as a complete account of the event.</p>
+      )}
       <header className="rounded-xl border border-amber-200 bg-amber-400/10 p-5">
-        <p className="text-xs font-semibold uppercase tracking-widest text-amber-800">Porchlight · live event</p>
+        <p className="text-xs font-semibold uppercase tracking-widest text-amber-800">Porchlight · coordinator board</p>
         <h1 className="mt-1 text-2xl font-bold tracking-tight">
           {event ? event.headline : "No open event"}
         </h1>
@@ -35,9 +56,26 @@ export default async function Home() {
         </div>
       </header>
 
+      <div className="grid gap-6 md:grid-cols-2">
+        <section className="rounded-xl border border-zinc-200 bg-white p-4">
+          <h2 className="text-sm font-semibold">Human decisions and volunteer responses</h2>
+          <ul className="mt-3 space-y-2 text-sm">
+            {(decisions ?? []).map((d) => {
+              let input: { resident_name?: string } = {};
+              try { input = typeof d.input === "string" ? JSON.parse(d.input) : d.input ?? {}; } catch { /* Legacy cases remain visible by status. */ }
+              return <li key={d.id}><strong>{input.resident_name ?? "Resident case"}</strong> · {d.tool?.replaceAll("_", " ")} · {d.status ?? "awaiting coordinator"}</li>;
+            })}
+            {(dispatches ?? []).map((d) => <li key={d.id} className="rounded border border-amber-200 bg-amber-50 p-2">Volunteer request · <strong>{d.status}</strong>{d.detail ? ` · ${d.detail}` : ""}</li>)}
+            {!(decisions?.length || dispatches?.length) && <li className="text-zinc-500">No assistance decisions yet.</li>}
+          </ul>
+          {latestMenu && <p className="mt-3 whitespace-pre-wrap break-words rounded bg-zinc-50 p-3 text-sm">{menuText}</p>}
+        </section>
+        <SimulatePanel eventId={event?.id ?? ""} residents={residents ?? []} />
+      </div>
+
       <section className="rounded-xl border border-zinc-200 bg-white">
         <h2 className="border-b border-zinc-100 px-4 py-3 text-sm font-semibold">Roster board · {(residents ?? []).length} residents</h2>
-        <ul className="divide-y divide-zinc-100">
+        <ul className="max-h-80 overflow-auto divide-y divide-zinc-100">
           {(residents ?? []).map((r) => {
             const c = byResident.get(r.id);
             const stamp = c?.status ?? "pending";
@@ -68,7 +106,6 @@ export default async function Home() {
             ))}
           </ul>
         </section>
-        <SimulatePanel eventId={event?.id ?? ""} residents={residents ?? []} />
       </div>
       <Refresh />
     </main>
