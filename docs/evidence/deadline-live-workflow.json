@@ -1,0 +1,63 @@
+{
+  "verified_at_utc": "2026-09-14T23:50:09.311257+00:00",
+  "runtime": {
+    "version": "7",
+    "status": "READY",
+    "package_sha256": "b2a7e9c94eb41c46fcf68e9864a4fea5d568bee880b81c00eae6ef2426047dc5"
+  },
+  "lambdas": [
+    {
+      "function": "porchlight-glue-NwsPoll-k38wFpXJlO20",
+      "state": "Active",
+      "last_update_status": "Successful",
+      "package_sha256": "76b4fc338dbad6a88bb06f57995012b978d17e32c4ade144a5e6fbd584d76767"
+    },
+    {
+      "function": "porchlight-glue-Tick-FnwBguv4KmWq",
+      "state": "Active",
+      "last_update_status": "Successful",
+      "package_sha256": "76b4fc338dbad6a88bb06f57995012b978d17e32c4ade144a5e6fbd584d76767"
+    },
+    {
+      "function": "porchlight-glue-TwilioInbound-nNEjgRJsVE3t",
+      "state": "Active",
+      "last_update_status": "Successful",
+      "package_sha256": "76b4fc338dbad6a88bb06f57995012b978d17e32c4ade144a5e6fbd584d76767"
+    }
+  ],
+  "authentication": {
+    "lambda_state": "Active",
+    "lambda_update": "Successful",
+    "webhook_registered": true,
+    "pending_updates_at_registration": 0,
+    "fields_and_matching_secret_verified": true,
+    "inbound_drill_surface": "authenticated console HTTP calls, not human Telegram replies"
+  },
+  "empty_event_tick": {
+    "http_status": 200,
+    "accepted": true,
+    "fired": []
+  },
+  "workflow": {
+    "result": "accepted_workflow_verified",
+    "real_provider_message_ids": 3,
+    "simulated_outreach": 39,
+    "real_model_used": true,
+    "gate_before_dispatch_verified": true,
+    "accepted_dispatch_verified": true,
+    "inbound_actor": "assistant-generated resident, coordinator and volunteer test replies; not human acceptance",
+    "physical_visit": "assistant-generated synthetic request; no real visit authorized or completed; cleanup verification recorded separately"
+  },
+  "cleanup": {
+    "created_event_closed": true,
+    "active_test_reservations": 0,
+    "created_volunteer_disabled": true,
+    "observed_real_provider_message_ids": 3
+  },
+  "limits": [
+    "One synthetic integration case; no clinical accuracy benchmark",
+    "Assistant-generated inbound inputs; no human acceptance or physical visit",
+    "One owner recipient; no resident pilot",
+    "Eight-message audit budget was not a global transport hard cap"
+  ]
+}
