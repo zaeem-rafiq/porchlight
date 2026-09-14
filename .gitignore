@@ -30,3 +30,4 @@ agentcore/.cli/logs/
 *.log
 dryrun.log
 deploy*.log
+build_media/
