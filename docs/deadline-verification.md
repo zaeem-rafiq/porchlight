@@ -1,8 +1,10 @@
 # September 14 verification checkpoint
 
-Date: 2026-09-14. Baseline public commit: `e254173f09b23b25d6c64283cef66a2f6cde86c4`.
+Date: 2026-09-14. Baseline public commit: `e254173f09b23b25d6c64283cef66a2f6cde86c4`. Published fixes: [e7328c1](https://github.com/zaeem-rafiq/porchlight/commit/e7328c14558a874f518ca55197b32d0b35a29fba).
 
-This note separates local execution, simulated integrations, historical evidence, and current deployment verification. It is a checkpoint for work on `codex/porchlight-deadline-fixes`, not a claim that the updated package has been deployed or posted.
+The repaired source is published, migration 006 is applied, and the corrected Devpost copy and additional information were saved. The local browser workflow passed the acceptance checks below. The updated AWS code and authentication configuration are **not deployed**: automatic approval review requires a direct user response. The owner-only real workflow drill has **not run**. The replacement video is published as an unlisted YouTube video and saved on the published Devpost submission.
+
+This note distinguishes published source, local execution, simulated integrations, historical evidence, and provider deployment.
 
 ## Current observations
 
@@ -13,7 +15,8 @@ This note separates local execution, simulated integrations, historical evidence
 | TypeScript check | `./node_modules/.bin/tsc --noEmit --incremental false` from `console` — exit 0 after volunteer request-ID binding. | Compilation does not prove browser interactions or deployment. |
 | Console production build | `npm run build -- --webpack` from `console` — exit 0, including TypeScript validation. | Browser interactions and hosting are not established by this build. |
 | Local drill tests | `env -i PATH=/opt/homebrew/bin:/usr/bin:/bin PYTHON_DOTENV_DISABLED=1 AWS_EC2_METADATA_DISABLED=true AWS_CONFIG_FILE=/dev/null AWS_SHARED_CREDENTIALS_FILE=/dev/null PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 ../porchlight-venv/bin/python -m pytest tests/test_local_drill.py -q` — **3 passed**, exit 0. | Real handlers run with synthetic database, model, and transport adapters. |
-| Supabase JavaScript client against local bridge | Readback returned 40 synthetic residents, 0 events, and no client error. | This exercised the local bridge, not hosted Supabase. |
+| Supabase JavaScript client against local bridge | Initial readback returned 40 synthetic residents, 0 events, and no client error. | This exercised the local bridge, not hosted Supabase. |
+| Actual browser acceptance, 23:18 UTC | Chrome exercised the production Webpack build against the isolated bridge: heat injection, fictional resident reply, menu-bound approval, request-bound acceptance, unauthorized access rejection, and repeated injection. Detailed outcomes appear below. | Database, model, and messaging adapters were simulated. No real Telegram or hosted-database workflow was demonstrated. |
 | Patch whitespace check | `git diff --check` — exit 0 after the boundary/outreach changes. | Not a correctness test. |
 | Real Strands/Bedrock triage, 22:54 UTC | The current local `triage_reply` function called `us.anthropic.claude-sonnet-4-5-20250929-v1:0` for fictional input `AC broke, dizzy`: `used_model_call=true`, `medical` / `cooling`, confidence 0.95, exact quote. The invoking assertion completed with exit 0. [Sanitized result](evidence/deadline-real-triage.json). | One provider integration check. No fixed evaluation, deployed-runtime verification, or real resident outcome. |
 
@@ -27,7 +30,7 @@ AWS_CONFIG_FILE=/dev/null AWS_SHARED_CREDENTIALS_FILE=/dev/null \
 -k 'not telegram_messaging_integration and not out_of_bounds_residents_and_invalid_ops'
 ```
 
-The two explicitly deselected cases require unavailable credentials in the isolated test environment. The 58 skipped cases were not executed. The Python environment path above is the review workspace's installed environment; a fresh checkout can use `.venv/bin/python` after installing the existing requirements. Browser acceptance remains unverified at this checkpoint. The README does not claim that every integration test passed.
+The two explicitly deselected cases require unavailable credentials in the isolated test environment. The 58 skipped cases were not executed. The Python environment path above is the review workspace's installed environment; a fresh checkout can use `.venv/bin/python` after installing the existing requirements. The README does not claim that every integration test passed.
 
 The default Turbopack build did not complete in this sandbox because of font/process errors. The Webpack build above completed successfully. The failed build has not been attributed to an application defect.
 
@@ -51,16 +54,33 @@ The README coverage test was updated to require the audience, implemented compon
 
 The browser UI connects to the bridge through explicit local URLs. The public `local-drill` access key belongs only to that isolated fixture. It is not an operational credential.
 
+## Browser acceptance — September 14, 23:18 UTC
+
+The production Webpack build was exercised in Chrome at `http://127.0.0.1:3777` against the isolated local bridge. The visible disclosure stated that model and Telegram adapters were simulated. The following operations returned observed responses:
+
+- Heat injection: HTTP 200, 40 simulated contacts, no real messages.
+- Ruth Alvarez, `AC broke, dizzy`: HTTP 200, medical/cooling with the exact quote and `used_model=false`; coordinator case appeared open.
+- Current menu code + option 1: HTTP 200, approved; the volunteer request appeared proposed.
+- Exact volunteer request ID + Y: HTTP 200, accepted; the board displayed accepted and the audit recorded `volunteer_accepted`.
+- Immediate repeated Y: HTTP 429 from the console throttle. This browser action does not prove handler idempotence; focused handler tests cover that boundary.
+- Wrong console access key: HTTP 403, `valid access key required`.
+- Repeat authorized heat injection: HTTP 200, sent 0, skipped 40. The accepted request and medical status remained visible.
+
+No browser console errors were returned by the inspected error-log surface. The recorded interaction is a local synthetic workflow, not a live Telegram or hosted-database demonstration. Its separate real Bedrock check is described above.
+
 ## Provider and delivery state
 
 | Surface | Current checkpoint |
 | --- | --- |
-| Updated AgentCore runtime | **Not yet verified live in this note.** A provider resource reporting READY alone does not prove execution of the changed handlers. |
+| Public source | Fixes published to existing GitHub `main` at [e7328c1](https://github.com/zaeem-rafiq/porchlight/commit/e7328c14558a874f518ca55197b32d0b35a29fba). A fresh remote HEAD readback matched the local commit after the no-force push. |
+| Updated AgentCore runtime and three Lambda code packages | **Not deployed.** Reviewed packages and rollback artifacts are prepared; automatic approval review requires a direct user response before deployment. A provider resource reporting READY alone would not prove execution of the changed handlers. |
+| Telegram authentication configuration and webhook | **Not deployed.** Prepared owner/chat/secret configuration and registration of the existing Lambda URL await the same approval boundary. |
 | Current Bedrock model and fixed evaluation | **One real Sonnet 4.5 triage call verified at 22:54 UTC.** Fixed evaluation not rerun; no current accuracy score asserted. |
-| Owner Telegram delivery and response | **Not yet verified for the updated package in this note.** |
-| Database migration 006 | Prepared; application to a real database is not asserted here. |
-| Public Next.js console | No accessible hosted deployment is established here. Local execution is separate. |
-| Devpost replacement copy, repository publication, or media upload | Prepared artifacts do not establish publication or submission. |
+| Owner-only real workflow drill | **NOT RUN.** Neither real owner delivery for the updated package nor human phone acceptance is established. Assistant-generated inputs in a future drill must remain distinct from human acceptance. |
+| Database migration 006 | **Applied to the existing database; all three additive unique index definitions verified.** This establishes the constraints, not a completed live application workflow. |
+| Next.js console | Production build and local browser acceptance verified as described above. No accessible public hosted console is claimed. |
+| Devpost submission text | Corrected public copy saved at **23:09:41 UTC**; additional information saved at **23:14 UTC**. The submission readback showed **5 of 5 steps complete and submitted**. Version 5 saved the replacement video at **23:26:02 UTC**; a fresh API readback confirmed the new video URL, published state, and preserved submission. |
+| Replacement demo video | [Revised Porchlight demo](https://www.youtube.com/watch?v=N54tBdeevWo) is **published Unlisted**. The **1:56.5**, 1920×1080, 30 fps H.264 video has no audio and uses actual local UI recording. Cut-boundary inspection and independent full decoding completed without errors. YouTube copyright and Community Guidelines checks completed with no issues. The watch page confirmed its title and Unlisted status; playback advanced from 0:00 to 0:02. This short playback check does not establish a full watch-through of the hosted copy. |
 
 ## Historical evidence
 
