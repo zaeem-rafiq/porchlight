@@ -6,7 +6,8 @@ Produces 1920x1080 broadcast-quality slides with high typography and layout fide
 import os
 from PIL import Image, ImageDraw, ImageFont
 from generate_slides_core import (
-    W, H, create_base_canvas, draw_subtitles, draw_card, draw_phone_mockup, save_frame, get_fonts
+    W, H, create_base_canvas, draw_subtitles, draw_card, draw_phone_mockup, save_frame, get_fonts,
+    draw_icon_cross, draw_icon_check, draw_dynamic_badge
 )
 
 def render_shot_1a():
@@ -98,8 +99,10 @@ def render_shot_1b():
     cur_y = 390
     for title, desc in old_points:
         draw.rounded_rectangle([(95, cur_y), (895, cur_y + 90)], radius=10, fill=(38, 24, 30), outline=(80, 30, 40))
-        draw.text((120, cur_y + 16), "✕  " + title, fill=(239, 68, 68), font=fonts["body_bold"])
-        draw.text((150, cur_y + 48), desc, fill=(203, 213, 225), font=fonts["small"])
+        draw.ellipse([(118, cur_y + 18), (146, cur_y + 46)], fill=(127, 29, 29))
+        draw_icon_cross(draw, 132, cur_y + 32, r=6, color=(254, 202, 202), width=2)
+        draw.text((158, cur_y + 16), title, fill=(239, 68, 68), font=fonts["body_bold"])
+        draw.text((158, cur_y + 48), desc, fill=(203, 213, 225), font=fonts["small"])
         cur_y += 110
 
     # Right Card: Porchlight Autonomous Flow
@@ -117,8 +120,10 @@ def render_shot_1b():
     cur_y = 390
     for title, desc in new_points:
         draw.rounded_rectangle([(1015, cur_y), (1825, cur_y + 90)], radius=10, fill=(18, 38, 38), outline=(16, 110, 80))
-        draw.text((1040, cur_y + 16), "✓  " + title, fill=(52, 211, 153), font=fonts["body_bold"])
-        draw.text((1070, cur_y + 48), desc, fill=(203, 213, 225), font=fonts["small"])
+        draw.ellipse([(1038, cur_y + 18), (1066, cur_y + 46)], fill=(6, 95, 70))
+        draw_icon_check(draw, 1052, cur_y + 32, r=6, color=(167, 243, 208), width=2)
+        draw.text((1078, cur_y + 16), title, fill=(52, 211, 153), font=fonts["body_bold"])
+        draw.text((1078, cur_y + 48), desc, fill=(203, 213, 225), font=fonts["small"])
         cur_y += 110
 
     draw_subtitles(draw, fonts, "But when an extreme heat dome settles over a city, a single volunteer coordinator cannot manually call dozens of residents, interpret ambiguous replies, and coordinate emergency transport before it is too late. Porchlight works the list automatically.")
@@ -193,19 +198,24 @@ def render_shot_2b():
     trace_path = "docs/media/trace-heat.png"
     if os.path.exists(trace_path):
         trace_img = Image.open(trace_path)
-        trace_img.thumbnail((800, 380), Image.Resampling.LANCZOS)
-        tx = 1025 + (800 - trace_img.width) // 2
-        ty = 220
-        draw_card(draw, [(1015, 210), (1835, 590)], fill=(11, 16, 26), outline=(71, 85, 105))
-        im.paste(trace_img, (tx, ty))
+        # Crop to actual content bounds (eliminating 62% dead whitespace on right)
+        trace_crop = trace_img.crop((15, 10, 395, 485))
+        # Scale cropped trace to fit neatly
+        trace_crop.thumbnail((500, 360), Image.Resampling.LANCZOS)
+        tx = 1015 + (820 - trace_crop.width) // 2
+        ty = 210 + (380 - trace_crop.height) // 2
+        draw_card(draw, [(1015, 210), (1835, 590)], fill=(15, 22, 35), outline=(71, 85, 105))
+        # Draw clean border around the trace snippet
+        draw.rounded_rectangle([(tx - 6, ty - 6), (tx + trace_crop.width + 6, ty + trace_crop.height + 6)], radius=6, fill=(255, 255, 255))
+        im.paste(trace_crop, (tx, ty))
 
     # Bottom Storage & RLS Callout
     draw.rounded_rectangle([(1025, 620), (1825, 905)], radius=14, fill=(16, 28, 38), outline=(6, 182, 212), width=2)
     draw.text((1055, 645), "SUPABASE POSTGRESQL + ROW LEVEL SECURITY", fill=(6, 182, 212), font=fonts["h2"])
     draw.text((1055, 685), "• Schema 'porchlight' isolates 6 relational tables under strict Postgres RLS.", fill=(248, 250, 252), font=fonts["body"])
-    draw.text((1055, 725), "• Anonymous API keys can only perform read-only SELECT queries (Error 42501 on write).", fill=(248, 250, 252), font=fonts["body"])
+    draw.text((1055, 725), "• Anonymous queries strictly read-only SELECT (Postgres Error 42501 on write).", fill=(248, 250, 252), font=fonts["body"])
     draw.text((1055, 765), "• All state mutations restricted to backend AgentCore Runtime service role.", fill=(248, 250, 252), font=fonts["body"])
-    draw.text((1055, 805), "• Every inbound text, model triage decision, and gate approval has immutable audit log.", fill=(248, 250, 252), font=fonts["body"])
+    draw.text((1055, 805), "• Immutable audit log for every inbound text, triage decision, and gate action.", fill=(248, 250, 252), font=fonts["body"])
 
     draw_subtitles(draw, fonts, "Using the Strands Agents framework, Porchlight spawns one dedicated resident agent per neighbor in parallel. Messages flow across Telegram, while critical medical decisions are intercepted by our human-in-the-loop Coordinator Gate. All state is immutably logged to Supabase under Row Level Security for the Next.js operator console.")
     save_frame(im, "shot_2b")
@@ -217,11 +227,11 @@ def render_shot_3a():
     cb_path = "docs/media/console-board.png"
     if os.path.exists(cb_path):
         cb_img = Image.open(cb_path)
-        # crop top 1400 px
-        crop_cb = cb_img.crop((0, 0, cb_img.width, 1400))
+        # Crop to content bounds, removing side empty margins
+        crop_cb = cb_img.crop((180, 30, 1845, 1400))
         crop_cb.thumbnail((1050, 800), Image.Resampling.LANCZOS)
-        cx = 60 + (1050 - crop_cb.width) // 2
-        cy = 110 + (800 - crop_cb.height) // 2
+        cx = 55 + (1060 - crop_cb.width) // 2
+        cy = 100 + (835 - crop_cb.height) // 2
         draw_card(draw, [(55, 100), (1115, 935)], fill=(18, 24, 38), outline=(51, 65, 85))
         im.paste(crop_cb, (cx, cy))
 
@@ -338,8 +348,9 @@ def render_shot_4b():
     
     # Left: Massive Latency & Efficiency Card
     draw_card(draw, [(60, 120), (820, 910)], fill=(16, 32, 26), outline=(5, 150, 105), width=2)
-    draw.rounded_rectangle([(95, 150), (360, 190)], radius=6, fill=(6, 95, 70))
-    draw.text((115, 158), "BENCHMARK PERFORMANCE", fill=(167, 243, 208), font=fonts["small_bold"])
+    tw_bench = int(draw.textlength("BENCHMARK PERFORMANCE", font=fonts["small_bold"]))
+    draw.rounded_rectangle([(95, 150), (95 + tw_bench + 32, 190)], radius=6, fill=(6, 95, 70))
+    draw.text((111, 158), "BENCHMARK PERFORMANCE", fill=(167, 243, 208), font=fonts["small_bold"])
     
     draw.text((95, 230), "0.85s", fill=(52, 211, 153), font=fonts["huge_stat"])
     draw.text((95, 340), "Total Inbound-to-Console Latency", fill=(248, 250, 252), font=fonts["h2"])
@@ -392,10 +403,10 @@ def render_shot_4b():
     draw.text((930, 545), "IMMUTABLE AUDIT TIMELINE (Supabase audit_log)", fill=(99, 102, 241), font=fonts["h2"])
     
     timeline = [
-        ("14:02:08.120", "triage:ok", "Ruth Alvarez: status=ok, need=none, quote='1', confidence=1.00 (deterministic short-circuit)"),
-        ("14:02:08.970", "console_sync", "Console dispatch board re-rendered via PostgREST RLS read-only query."),
-        ("14:00:11.200", "wave_outreach:sent", "Check-in text dispatched to Ruth Alvarez via Telegram Bot API (@porchlight_checkon_bot)."),
-        ("14:00:00.010", "hazard:detected", "AWS EventBridge detected NWS Extreme Heat Warning ARZ001. Runtime session initiated.")
+        ("14:02:08.120", "triage:ok", "Ruth Alvarez: status=ok, need=none, quote='1' (0.85s)"),
+        ("14:02:08.970", "console_sync", "Dispatch board re-rendered via PostgREST RLS read-only query"),
+        ("14:00:11.200", "wave_outreach", "Check-in text sent to Ruth Alvarez via Telegram Bot API"),
+        ("14:00:00.010", "hazard:detected", "EventBridge detected NWS Extreme Heat Warning ARZ001")
     ]
     ty = 600
     for ts, ev, desc in timeline:
@@ -453,17 +464,17 @@ def render_shot_5b():
     
     # JSON-like structured card
     schema_fields = [
-        ("status:", "medical", (239, 68, 68)),
-        ("need:", "cooling", (245, 158, 11)),
-        ("quote:", "\"AC broke, dizzy\"", (52, 211, 153)),
-        ("confidence:", "0.95", (248, 250, 252)),
-        ("reason:", "\"Air conditioning failure causing dizziness in extreme heat\"", (203, 213, 225))
+        ("status:", "medical", (239, 68, 68), fonts["code_bold"]),
+        ("need:", "cooling", (245, 158, 11), fonts["code_bold"]),
+        ("quote:", "\"AC broke, dizzy\"", (52, 211, 153), fonts["code_bold"]),
+        ("confidence:", "0.95", (248, 250, 252), fonts["code_bold"]),
+        ("reason:", "\"AC failure causing dizziness in extreme heat\"", (203, 213, 225), fonts["code_small_bold"])
     ]
     cur_y = 265
-    for field, val, col in schema_fields:
+    for field, val, col, val_font in schema_fields:
         draw.rounded_rectangle([(95, cur_y), (925, cur_y + 65)], radius=10, fill=(48, 24, 32), outline=(127, 29, 29))
         draw.text((120, cur_y + 18), field, fill=(148, 163, 184), font=fonts["code_bold"])
-        draw.text((310, cur_y + 18), val, fill=col, font=fonts["code_bold"])
+        draw.text((310, cur_y + 20), val, fill=col, font=val_font)
         cur_y += 80
 
     # Liability notice
@@ -477,11 +488,13 @@ def render_shot_5b():
     cr_path = "docs/media/console-resident.png"
     if os.path.exists(cr_path):
         cr_img = Image.open(cr_path)
-        cr_img.thumbnail((860, 810), Image.Resampling.LANCZOS)
-        cx = 990 + (860 - cr_img.width) // 2
-        cy = 110 + (810 - cr_img.height) // 2
+        # Crop to content bounds, removing ~1000px of empty margins
+        cr_crop = cr_img.crop((460, 40, 1565, 1375))
+        cr_crop.thumbnail((850, 790), Image.Resampling.LANCZOS)
+        cx = 985 + (875 - cr_crop.width) // 2
+        cy = 110 + (810 - cr_crop.height) // 2
         draw_card(draw, [(985, 110), (1860, 920)], fill=(18, 24, 38), outline=(51, 65, 85))
-        im.paste(cr_img, (cx, cy))
+        im.paste(cr_crop, (cx, cy))
 
     draw_subtitles(draw, fonts, "...and classifies the situation as a medical emergency requiring cooling. But Porchlight never takes high-stakes actions autonomously, and our system never calls 911.")
     save_frame(im, "shot_5b")
@@ -609,16 +622,16 @@ def render_shot_7b():
         ("Operator Console:", "Dispatches board row updated to 'accepted' in real time", (52, 211, 153)),
         ("Audit Verification:", "audit_log entry: volunteer_accepted (id=disp-001)", (6, 182, 212))
     ]
-    cur_y = 290
+    cur_y = 275
     for label, val, col in dispatch_rows:
-        draw.rounded_rectangle([(870, cur_y), (1820, cur_y + 75)], radius=10, fill=(30, 41, 59), outline=(51, 65, 85))
-        draw.text((895, cur_y + 22), label, fill=(148, 163, 184), font=fonts["body_bold"])
-        draw.text((1180, cur_y + 22), val, fill=col, font=fonts["body_bold"])
-        cur_y += 92
+        draw.rounded_rectangle([(870, cur_y), (1820, cur_y + 66)], radius=10, fill=(30, 41, 59), outline=(51, 65, 85))
+        draw.text((895, cur_y + 18), label, fill=(148, 163, 184), font=fonts["body_bold"])
+        draw.text((1180, cur_y + 18), val, fill=col, font=fonts["body_bold"])
+        cur_y += 76
 
     # Bottom Stat Callout
-    draw.rounded_rectangle([(870, 780), (1820, 875)], radius=12, fill=(16, 32, 26), outline=(5, 150, 105))
-    draw.text((900, 810), "TOTAL TIME: 1m 48s FROM DISTRESS REPLY TO CONFIRMED DRIVER", fill=(52, 211, 153), font=fonts["h2"])
+    draw.rounded_rectangle([(870, 750), (1820, 850)], radius=12, fill=(16, 32, 26), outline=(5, 150, 105), width=2)
+    draw.text((900, 790), "TOTAL TIME: 1m 48s FROM DISTRESS REPLY TO CONFIRMED DRIVER", fill=(52, 211, 153), font=fonts["h2"])
 
     draw_subtitles(draw, fonts, "Marcus replies 'Y' to accept. The dispatch updates to accepted in real time on the console, and a calendar event is scheduled—closing the critical loop in under two minutes.")
     save_frame(im, "shot_7b")
@@ -714,8 +727,9 @@ def render_shot_8b():
     cur_y = 230
     for tag, sample, resolution, col in cases:
         draw.rounded_rectangle([(1170, cur_y), (1825, cur_y + 140)], radius=12, fill=(30, 41, 59), outline=(51, 65, 85))
-        draw.rounded_rectangle([(1195, cur_y + 16), (1380, cur_y + 46)], radius=6, fill=col)
-        draw.text((1210, cur_y + 22), tag, fill=(255, 255, 255), font=fonts["small_bold"])
+        tw = int(draw.textlength(tag, font=fonts["small_bold"]))
+        draw.rounded_rectangle([(1195, cur_y + 16), (1195 + tw + 28, cur_y + 46)], radius=6, fill=col)
+        draw.text((1209, cur_y + 22), tag, fill=(255, 255, 255), font=fonts["small_bold"])
         draw.text((1195, cur_y + 60), sample, fill=(248, 250, 252), font=fonts["body_bold"])
         draw.text((1195, cur_y + 98), resolution, fill=(148, 163, 184), font=fonts["small"])
         cur_y += 160

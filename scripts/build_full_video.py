@@ -137,8 +137,15 @@ def build_scene_clip(cfg, out_dir="build_media/clips"):
             "-i", shot_clips[0],
             "-i", audio_path,
             "-map", "0:v", "-map", "1:a",
-            "-c:v", "copy",
-            "-c:a", "aac", "-b:a", "192k",
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-crf", "18",
+            "-pix_fmt", "yuv420p",
+            "-r", "30",
+            "-c:a", "aac",
+            "-ar", "48000",
+            "-ac", "2",
+            "-b:a", "192k",
             "-shortest",
             scene_out
         ]
@@ -161,7 +168,10 @@ def build_scene_clip(cfg, out_dir="build_media/clips"):
             "-preset", "veryfast",
             "-crf", "18",
             "-pix_fmt", "yuv420p",
+            "-r", "30",
             "-c:a", "aac",
+            "-ar", "48000",
+            "-ac", "2",
             "-b:a", "192k",
             "-shortest",
             scene_out
@@ -194,7 +204,16 @@ def main():
         "-f", "concat",
         "-safe", "0",
         "-i", concat_list_path,
-        "-c", "copy",
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", "18",
+        "-pix_fmt", "yuv420p",
+        "-r", "30",
+        "-c:a", "aac",
+        "-ar", "48000",
+        "-ac", "2",
+        "-b:a", "192k",
+        "-movflags", "+faststart",
         out_final
     ]
     subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)

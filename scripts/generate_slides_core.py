@@ -23,6 +23,8 @@ def get_fonts():
         "tiny": ImageFont.truetype(os.path.join(FONT_DIR, "segoeui.ttf"), 15),
         "code": ImageFont.truetype(os.path.join(FONT_DIR, "consola.ttf"), 20),
         "code_bold": ImageFont.truetype(os.path.join(FONT_DIR, "consolab.ttf"), 20),
+        "code_small": ImageFont.truetype(os.path.join(FONT_DIR, "consola.ttf"), 16),
+        "code_small_bold": ImageFont.truetype(os.path.join(FONT_DIR, "consolab.ttf"), 16),
         "subtitle": ImageFont.truetype(os.path.join(FONT_DIR, "segoeui.ttf"), 23),
         "big_stat": ImageFont.truetype(os.path.join(FONT_DIR, "segoeuib.ttf"), 72),
         "huge_stat": ImageFont.truetype(os.path.join(FONT_DIR, "segoeuib.ttf"), 96),
@@ -111,6 +113,29 @@ def draw_subtitles(draw, fonts, text):
 
 def draw_card(draw, box, fill=(21, 30, 46), outline=(38, 53, 77), radius=16, width=2):
     draw.rounded_rectangle(box, radius=radius, fill=fill, outline=outline, width=width)
+
+def draw_icon_cross(draw, cx, cy, r=8, color=(239, 68, 68), width=3):
+    d = int(r * 0.72)
+    draw.line([(cx - d, cy - d), (cx + d, cy + d)], fill=color, width=width)
+    draw.line([(cx - d, cy + d), (cx + d, cy - d)], fill=color, width=width)
+
+def draw_icon_check(draw, cx, cy, r=8, color=(52, 211, 153), width=3):
+    d = int(r * 0.72)
+    p1 = (cx - d, cy)
+    p2 = (cx - int(d * 0.2), cy + d)
+    p3 = (cx + d, cy - d)
+    draw.line([p1, p2], fill=color, width=width)
+    draw.line([p2, p3], fill=color, width=width)
+
+def draw_dynamic_badge(draw, font, xy, text, fill, text_color, radius=6, pad_x=12, pad_y=4):
+    x, y = xy
+    tw = draw.textlength(text, font=font)
+    th = 20
+    bx1, by1 = x, y
+    bx2, by2 = x + int(tw) + pad_x * 2, y + th + pad_y * 2
+    draw.rounded_rectangle([(bx1, by1), (bx2, by2)], radius=radius, fill=fill)
+    draw.text((x + pad_x, y + pad_y), text, fill=text_color, font=font)
+    return bx2, by2
 
 def draw_phone_mockup(draw, fonts, box, chat_title, messages):
     x1, y1, x2, y2 = box
