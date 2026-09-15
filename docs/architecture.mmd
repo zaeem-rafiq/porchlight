@@ -1,117 +1,46 @@
-graph TB
-    %% =========================================================================
-    %% Porchlight Architecture Diagram (P-08)
-    %% Strands + AWS Bedrock AgentCore Extreme-Weather Wellness Agent
-    %% =========================================================================
+flowchart TB
+    NWS["NWS active alerts"]
+    EB["EventBridge poll and tick adapters"]
+    TG["Telegram sandbox<br/>Resident, coordinator, volunteer roles<br/>Owner chat receives real messages"]
+    CONSOLE["Local Next.js console<br/>Roster and audit timeline<br/>Access-key-protected drill controls"]
 
-    subgraph External["1. External Alerts & Triggers"]
-        NWS["NWS Weather API<br/><code>api.weather.gov/alerts</code>"]
-        EB["AWS EventBridge Scheduler<br/><code>rate(15 minutes)</code>"]
+    subgraph LAMBDA["AWS Lambda adapters"]
+        POLL["NWS poll handler"]
+        TICK["Tick handler"]
+        INBOUND["Inbound Function URL<br/>Webhook secret and sender checks<br/>Separate console access-key check"]
     end
+    NWS --> POLL
+    EB --> POLL
+    EB --> TICK
+    TG --> INBOUND
+    CONSOLE -->|"drill actions + access key"| INBOUND
 
-    subgraph Ingress["2. Serverless Ingress & Edge (AWS Lambda)"]
-        FURL["Lambda Function URL<br/><code>https://*.lambda-url.us-east-1.on.aws/</code>"]
-        L_POLL["Lambda: NwsPoll<br/><code>handlers.nws_poll_handler</code>"]
-        L_INBOUND["Lambda: TelegramInbound<br/><code>handlers.telegram_inbound_handler</code>"]
-        L_TICK["Lambda: Tick<br/><code>handlers.tick_handler</code>"]
+    subgraph RUNTIME["Amazon Bedrock AgentCore Runtime — Python action handlers"]
+        ROUTER["Route alert, resident reply, coordinator decision,<br/>volunteer reply, timer tick"]
+        CONTACT["Deterministic vulnerability tiers<br/>Preserve contact state; allowlisted outreach"]
+        TRIAGE["Interpret individual free-text reply<br/>Strands Agent + validated structured Triage<br/>1, 2, STOP handled in code"]
+        GATE["Persisted coordinator decision queue<br/>Deterministic gate: current menu code + selected case"]
+        REQUEST["Store volunteer request before sending<br/>Authenticated Y / N + reviewed request ID<br/>Persist acceptance or decline"]
+        ROUTER --> CONTACT
+        ROUTER --> TRIAGE
+        TRIAGE -->|"help, medical, unclear"| GATE
+        ROUTER -->|"coordinator reply"| GATE
+        GATE -->|"approved volunteer request"| REQUEST
+        ROUTER -->|"volunteer reply"| REQUEST
     end
+    POLL --> ROUTER
+    TICK --> ROUTER
+    INBOUND --> ROUTER
+    CONTACT -->|"check-in"| TG
+    GATE -->|"case menu"| TG
+    REQUEST -->|"request + ID"| TG
 
-    subgraph AgentCore["3. AWS Bedrock AgentCore Platform"]
-        AC_RT["AgentCore Runtime<br/><code>porchlight_porchlight-DEFAULT</code>"]
-        AC_MEM["AgentCore Memory<br/><code>porchlight-Jg1L1m9fd7</code><br/>(Preferences & Protocol)"]
-        BEDROCK["Amazon Bedrock<br/><code>Claude 3.5 Sonnet / 4.5</code><br/>(Inference Profile)"]
-        SECRETS["AWS Secrets Manager<br/><code>porchlight/app</code>"]
-    end
-
-    subgraph Strands["4. Strands Multi-Agent Intelligence"]
-        APP["App Orchestrator<br/><code>BedrockAgentCoreApp</code>"]
-        subgraph AgentsAsTools["Agents-as-Tools (asyncio)"]
-            RA1["ResidentAgent #1<br/>Ruth Alvarez"]
-            RA2["ResidentAgent #2<br/>Mabel Thornton"]
-            RA_N["ResidentAgent #N<br/>(40 Parallel Agents)"]
-        end
-        TRIAGE["Structured Triage<br/><code>status, need, quote, reason</code>"]
-        GATE["Coordinator Gate Hook<br/><code>BeforeToolCallEvent</code><br/>(Holds escalate_medical)"]
-        DISPATCH["Strands Dispatcher<br/><code>match_resource + ask_volunteer</code>"]
-    end
-
-    subgraph Messaging["5. Telegram Messaging Edge"]
-        TG_API["Telegram Bot API<br/><code>@porchlight_checkon_bot</code>"]
-        RES_CH["Resident Channel<br/>Outreach Waves & Replies"]
-        COORD_CH["Coordinator Channel<br/><code>[Coordinator]</code> Ping & 1/2/3 Approvals"]
-        SAFETY["Safety Gate<br/><code>PHONE_ALLOWLIST</code> Guard<br/>Never-911 & STOP/HELP"]
-    end
-
-    subgraph Storage["6. Supabase PostgreSQL & RLS (porchlight schema)"]
-        POSTGREST["Supabase PostgREST API<br/><code>/rest/v1/*</code>"]
-        RLS["Row Level Security (RLS)<br/>Anon Read-Only (SELECT)<br/>Direct Mutations Rejected (42501)"]
-        subgraph Tables["Schema Tables"]
-            T_RES["residents (40)"]
-            T_CON["contacts"]
-            T_DISP["dispatches"]
-            T_GATE["gate_pending"]
-            T_AUDIT["audit_log"]
-            T_HAZ["hazard_events"]
-        end
-    end
-
-    subgraph Console["7. Judge Console Dispatch Board (AWS App Runner)"]
-        ECR["AWS ECR Container<br/><code>porchlight-console:latest</code>"]
-        APPRUNNER["AWS App Runner<br/>(Public HTTPS Endpoint)"]
-        NEXTJS["Next.js 16 Standalone<br/>(React 19, Turbopack, Port 3000)"]
-        BOARD["40-Resident Roster Board<br/>Live Status Stamps & Timeline"]
-        SIM_PANEL["Simulation Controls<br/>(x-console-key & 10s cooldown)"]
-    end
-
-    %% Data Flow Connections
-    NWS -->|Active Alerts| L_POLL
-    EB -->|15m Polling & Tick| L_POLL
-    EB -->|Silence Ladders| L_TICK
-    TG_API -->|Webhook Updates| FURL
-    FURL --> L_INBOUND
-
-    L_POLL -->|Invoke Runtime| AC_RT
-    L_INBOUND -->|Invoke Runtime| AC_RT
-    L_TICK -->|Invoke Runtime| AC_RT
-
-    AC_RT --> APP
-    AC_MEM <-->|Retrieve / Store Context| APP
-    APP --> BEDROCK
-    SECRETS -.->|App Secrets| AC_RT
-
-    APP --> AgentsAsTools
-    AgentsAsTools --> TRIAGE
-    TRIAGE -->|Medical Flag| GATE
-    GATE -->|Interrupt & Hold| T_GATE
-    GATE -->|Consolidated Ping| COORD_CH
-
-    APP --> DISPATCH
-    DISPATCH -->|Volunteer Match| RES_CH
-    DISPATCH -->|Record Dispatch| T_DISP
-
-    COORD_CH --> TG_API
-    RES_CH --> TG_API
-    TG_API --> SAFETY
-    SAFETY -->|Verified Phone| TG_API
-
-    APP -->|Service Role RW| Tables
-    GATE -->|Log Audit & Pending| Tables
-
-    Tables --> RLS
-    RLS --> POSTGREST
-    POSTGREST -->|Read-Only Anon Queries| NEXTJS
-    NEXTJS --> BOARD
-    SIM_PANEL -->|POST /api/simulate with x-console-key| FURL
-
-    ECR --> APPRUNNER
-    APPRUNNER --> NEXTJS
-
-    classDef aws fill:#FF9900,stroke:#232F3E,stroke-width:2px,color:white;
-    classDef strands fill:#4F46E5,stroke:#312E81,stroke-width:2px,color:white;
-    classDef supabase fill:#3ECF8E,stroke:#1E3A2F,stroke-width:2px,color:black;
-    classDef edge fill:#0284C7,stroke:#0369A1,stroke-width:2px,color:white;
-
-    class AC_RT,AC_MEM,BEDROCK,SECRETS,APPRUNNER,ECR,L_POLL,L_INBOUND,L_TICK aws;
-    class APP,RA1,RA2,RA_N,TRIAGE,GATE,DISPATCH strands;
-    class POSTGREST,RLS,T_RES,T_CON,T_DISP,T_GATE,T_AUDIT,T_HAZ supabase;
-    class TG_API,RES_CH,COORD_CH,SAFETY,FURL edge;
+    BEDROCK["Amazon Bedrock via Strands BedrockModel<br/>status, need, confidence, reason, verbatim quote"]
+    DB[("Supabase PostgreSQL<br/>contacts, gate_pending, dispatches, audit_log<br/>Persisted state; conditional updates and unique indexes")]
+    SECRETS["AWS Secrets Manager<br/>Private runtime integration configuration"]
+    TRIAGE <--> BEDROCK
+    RUNTIME <-->|"workflow state and audit"| DB
+    RUNTIME -->|"resolve configuration"| SECRETS
+    DB -->|"read synthetic roster and audit"| CONSOLE
+    SCOPE["Verified sandbox: 40 synthetic contacts<br/>Initial outreach: 1 owner delivery + 39 simulated<br/>Inbound drill messages were test-generated<br/>Real Bedrock and Telegram calls observed<br/>No resident pilot or completed visit claimed"]
+    RUNTIME -.-> SCOPE
